@@ -15,6 +15,7 @@ import NuevaMascota from './components/mascotas/nuevamascota';
 import User from './components/user/Login';
 import Registro from './components/user/Register';
 import Home from './components/user/Home';
+import Edit from './components/mascotas/editarinfo'
 
 // 🔹 Nueva página para admin
 import AdminPanel from './components/user/AdminPanel';
@@ -55,7 +56,7 @@ function App() {
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/mascotas" element={<MascotaPage />} />
-            
+            <Route path="/edit/:idMascota" element={<Edit />} />
             {/* 👇 Aquí ya no pasamos idMascota manual */}
             <Route path="/mascota/:idMascota" element={<Maxinfo />} />
 
