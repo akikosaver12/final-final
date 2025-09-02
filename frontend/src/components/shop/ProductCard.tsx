@@ -11,8 +11,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
 
   const handleAddToCart = () => {
     dispatch({ type: 'ADD_TO_CART', payload: product });
-    
-    // Efecto visual más sutil
+
+    // ✨ Animación sutil
     const button = document.getElementById(`add-btn-${product.id}`);
     if (button) {
       button.classList.add('animate-pulse');
@@ -20,43 +20,50 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
     }
   };
 
+  // 👉 Formateador para pesos colombianos
+  const formatCOP = (value: number) =>
+    new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: "COP",
+      minimumFractionDigits: 0,
+    }).format(value);
+
   return (
-    <div className="group bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-500 overflow-hidden transform hover:-translate-y-2 border border-gray-100">
+    <div className="group bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-500 overflow-hidden transform hover:-translate-y-2 border border-gray-100 relative">
       
       {/* IMAGEN DEL PRODUCTO */}
       <div className="relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
-        <img 
-  src={product.image || 'https://via.placeholder.com/400?text=Producto'} 
-  alt={product.name}
-/>
-        
-        {/* OVERLAY CON EFECTOS */}
+        <img
+          src={product.image || 'https://via.placeholder.com/400?text=Producto'}
+          alt={product.name}
+          className="w-full h-64 object-cover"
+        />
+
+        {/* OVERLAY */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-        
-        {/* BADGE DE CATEGORÍA */}
+
+        {/* BADGE CATEGORÍA */}
         <div className="absolute top-4 left-4">
           <span className="bg-white/90 backdrop-blur-sm text-gray-700 px-3 py-1 rounded-full text-sm font-medium shadow-lg">
             {product.category}
           </span>
         </div>
-        
-        {/* BOTÓN DE FAVORITO */}
+
+        {/* FAVORITO */}
         <button className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-white hover:scale-110">
           <svg className="w-5 h-5 text-gray-600 hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
           </svg>
         </button>
       </div>
-      
+
       {/* INFORMACIÓN DEL PRODUCTO */}
       <div className="p-6">
-        
-        {/* NOMBRE DEL PRODUCTO */}
         <h3 className="text-xl font-bold text-gray-900 mb-2 group-hover:text-gray-700 transition-colors line-clamp-2">
           {product.name}
         </h3>
-        
-        {/* RATING SIMULADO */}
+
+        {/* RATING */}
         <div className="flex items-center space-x-2 mb-3">
           <div className="flex space-x-1">
             {[...Array(5)].map((_, i) => (
@@ -67,25 +74,23 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           </div>
           <span className="text-sm text-gray-500">(4.8)</span>
         </div>
-        
-        {/* PRECIO Y BOTÓN */}
+
+        {/* PRECIO Y DESCUENTO */}
         <div className="flex items-center justify-between mb-4">
           <div>
             <span className="text-2xl font-bold text-gray-900">
-              ${product.price.toLocaleString()}
+              {formatCOP(product.price)}
             </span>
             <span className="text-sm text-gray-500 line-through ml-2">
-              ${(product.price * 1.2).toLocaleString()}
+              {formatCOP(product.price * 1.2)}
             </span>
           </div>
-          
-          {/* BADGE DE DESCUENTO */}
           <div className="bg-red-500 text-white px-2 py-1 rounded-lg text-xs font-bold">
             -20%
           </div>
         </div>
-        
-        {/* CARACTERÍSTICAS RÁPIDAS */}
+
+        {/* FEATURES */}
         <div className="flex flex-wrap gap-2 mb-4">
           {['Garantía 1 año', 'Envío gratis'].map((feature) => (
             <span key={feature} className="bg-gray-100 text-gray-600 px-2 py-1 rounded-lg text-xs font-medium">
@@ -93,9 +98,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
             </span>
           ))}
         </div>
-        
-        {/* BOTÓN DE AGREGAR AL CARRITO */}
-        <button 
+
+        {/* BOTÓN */}
+        <button
           id={`add-btn-${product.id}`}
           onClick={handleAddToCart}
           className="w-full bg-lime-400 hover:bg-lime-500 text-black font-bold py-3 px-6 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center space-x-2"
@@ -106,8 +111,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           <span>Agregar al Carrito</span>
         </button>
       </div>
-      
-      {/* EFECTO DE BRILLO AL HOVER */}
+
+      {/* EFECTO HOVER */}
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
       </div>
