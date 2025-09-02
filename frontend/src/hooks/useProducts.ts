@@ -14,14 +14,14 @@ interface BackendProduct {
 
 // 👉 Tipo normalizado para frontend
 export interface Product {
-  nombre: any;
-  _id: any;
   id: string;
   name: string;
   description: string;
   price: number;
   category: string;
   image?: string;
+  nombre: string;
+  _id: string;
 }
 
 export function useProducts() {
@@ -35,12 +35,19 @@ export function useProducts() {
         setLoading(true);
         setError(null);
 
-        const token = localStorage.getItem("token"); // 👈 aquí va el token
+        const token = localStorage.getItem("token");
+
+        // 👇 armamos headers dinámicamente
+        const headers: HeadersInit = {
+          "Content-Type": "application/json",
+        };
+
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
         const response = await fetch(`${BASE_URL}/api/productos`, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
+          headers,
         });
 
         if (!response.ok) {

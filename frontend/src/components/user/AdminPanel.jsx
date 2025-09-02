@@ -17,7 +17,24 @@ const AdminPanel = () => {
     return "";
   };
 
-  // 👉 Mover handleAgregarVacuna dentro del componente
+  const [activeTab, setActiveTab] = useState("productos");
+  const [formData, setFormData] = useState({
+    nombre: "",
+    precio: "",
+    descripcion: "",
+    imagen: null,
+  });
+  const [previewImage, setPreviewImage] = useState(null);
+  const [usuarios, setUsuarios] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [mascotasUsuario, setMascotasUsuario] = useState([]);
+  const [productos, setProductos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [warn, setWarn] = useState("");
+  const [serverStatus, setServerStatus] = useState("checking");
+  const fileRef = useRef(null);
+
+  // Función para agregar vacunas
   const handleAgregarVacuna = async (e, mascotaId) => {
     e.preventDefault();
     const formData = new FormData(e.target);
@@ -35,37 +52,58 @@ const AdminPanel = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(vacuna), // Enviar solo vacuna si el backend espera eso
+        body: JSON.stringify(vacuna),
       });
       if (!res.ok) {
         const errorText = await res.text();
         throw new Error(`Error al agregar vacuna: ${errorText}`);
       }
-      const updatedMascota = await res.json();
+      const result = await res.json();
       setMascotasUsuario((prev) =>
-        prev.map((m) => (m._id === mascotaId ? updatedMascota : m))
+        prev.map((m) => (m._id === mascotaId ? result.mascota : m))
       );
       e.target.reset();
+      alert("✅ Vacuna agregada correctamente");
     } catch (err) {
       alert("No se pudo agregar la vacuna: " + err.message);
     }
   };
-  const [activeTab, setActiveTab] = useState("productos");
-  const [formData, setFormData] = useState({
-    nombre: "",
-    precio: "",
-    descripcion: "",
-    imagen: null,
-  });
-  const [previewImage, setPreviewImage] = useState(null);
-  const [usuarios, setUsuarios] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [mascotasUsuario, setMascotasUsuario] = useState([]);
-  const [productos, setProductos] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [warn, setWarn] = useState("");
-  const [serverStatus, setServerStatus] = useState("checking");
-  const fileRef = useRef(null);
+
+  // Función para agregar operaciones
+  const handleAgregarOperacion = async (e, mascotaId) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const operacion = {
+      nombre: formData.get("nombre"),
+      descripcion: formData.get("descripcion"),
+      fecha: formData.get("fecha"),
+    };
+
+    const token = getToken();
+    try {
+      const res = await fetch(`${BASE_URL}/api/mascotas/${mascotaId}/operaciones`, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(operacion),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Error al agregar operación: ${errorText}`);
+      }
+      const result = await res.json();
+      setMascotasUsuario((prev) =>
+        prev.map((m) => (m._id === mascotaId ? result.mascota : m))
+      );
+      e.target.reset();
+      alert("✅ Operación agregada correctamente");
+    } catch (err) {
+      alert("No se pudo agregar la operación: " + err.message);
+    }
+  };
 
   // --- Server Health ---
   const checkServerHealth = async () => {
@@ -464,149 +502,180 @@ const AdminPanel = () => {
           </div>
         )}
 
-       {/* Detalle Usuario */}
-{activeTab === "detalleUsuario" && selectedUser && (
-  <div>
-    <button
-      onClick={() => {
-        setActiveTab("verUsuarios");
-        setSelectedUser(null);
-      }}
-      className="mb-6 bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 transition-colors"
-    >
-      ⬅ Volver a Usuarios
-    </button>
+        {/* Detalle Usuario */}
+        {activeTab === "detalleUsuario" && selectedUser && (
+          <div>
+            <button
+              onClick={() => {
+                setActiveTab("verUsuarios");
+                setSelectedUser(null);
+              }}
+              className="mb-6 bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 transition-colors"
+            >
+              ⬅ Volver a Usuarios
+            </button>
 
-    <h2 className="text-2xl font-bold text-purple-700 mb-4">
-      Mascotas de {selectedUser.name}
-    </h2>
+            <h2 className="text-2xl font-bold text-purple-700 mb-4">
+              Mascotas de {selectedUser.name}
+            </h2>
 
-    <div className="grid gap-4 md:grid-cols-2">
-      {mascotasUsuario.length === 0 ? (
-        <p className="text-gray-600">
-          Este usuario no tiene mascotas registradas
-        </p>
-      ) : (
-        mascotasUsuario.map((m) => (
-          <div
-            key={m._id}
-            className="bg-white p-4 rounded-lg shadow-md"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-purple-700">{m.nombre}</h3>
-                <p className="text-gray-600">{m.especie}</p>
-              </div>
-              {m.imagen && (
-                <img
-                  src={
-                    m.imagen.startsWith("http")
-                      ? m.imagen
-                      : `${BASE_URL}${m.imagen}`
-                  }
-                  alt={m.nombre}
-                  className="w-16 h-16 object-cover rounded-lg"
-                  onError={(e) => (e.target.style.display = "none")}
-                />
-              )}
-            </div>
-
-            {/* Ver información de la mascota */}
-            <div className="mt-3 text-sm text-gray-700">
-              <p><span className="font-semibold">Raza:</span> {m.raza || "No especificada"}</p>
-              <p><span className="font-semibold">Edad:</span> {m.edad ? `${m.edad} años` : "No especificada"}</p>
-              <p><span className="font-semibold">Género:</span> {m.genero || "No especificado"}</p>
-              <p><span className="font-semibold">Estado:</span> {m.estado || "No especificado"}</p>
-            </div>
-
-            {/* Sección de vacunas */}
-            <div className="mt-4">
-              <h4 className="font-semibold text-purple-600">Vacunas</h4>
-              {m.vacunas && m.vacunas.length > 0 ? (
-                <ul className="list-disc pl-5 text-gray-600">
-                  {m.vacunas.map((v, idx) => (
-                    <li key={idx}>
-                      {v.nombre} - {new Date(v.fecha).toLocaleDateString()}
-                    </li>
-                  ))}
-                </ul>
+            <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+              {mascotasUsuario.length === 0 ? (
+                <p className="text-gray-600">
+                  Este usuario no tiene mascotas registradas
+                </p>
               ) : (
-                <p className="text-gray-500">No hay vacunas registradas</p>
-              )}
-              <form
-                className="mt-2 flex gap-2"
-                onSubmit={(e) => handleAgregarVacuna(e, m._id)}
-              >
-                <input
-                  type="text"
-                  name="nombre"
-                  placeholder="Nombre vacuna"
-                  className="border rounded px-2 py-1 text-sm"
-                  required
-                />
-                <input
-                  type="date"
-                  name="fecha"
-                  className="border rounded px-2 py-1 text-sm"
-                  required
-                />
-                <button
-                  type="submit"
-                  className="bg-purple-500 text-white px-3 py-1 rounded hover:bg-purple-600 text-sm"
-                >
-                  Agregar
-                </button>
-              </form>
-            </div>
+                mascotasUsuario.map((m) => (
+                  <div
+                    key={m._id}
+                    className="bg-white p-6 rounded-lg shadow-md"
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="font-bold text-purple-700 text-xl">{m.nombre}</h3>
+                        <p className="text-gray-600">{m.especie} • {m.raza}</p>
+                      </div>
+                      {m.imagen && (
+                        <img
+                          src={
+                            m.imagen.startsWith("http")
+                              ? m.imagen
+                              : `${BASE_URL}${m.imagen}`
+                          }
+                          alt={m.nombre}
+                          className="w-20 h-20 object-cover rounded-lg"
+                          onError={(e) => (e.target.style.display = "none")}
+                        />
+                      )}
+                    </div>
 
-            {/* Sección de operaciones */}
-            <div className="mt-4">
-              <h4 className="font-semibold text-purple-600">Operaciones</h4>
-              {m.operaciones && m.operaciones.length > 0 ? (
-                <ul className="list-disc pl-5 text-gray-600">
-                  {m.operaciones.map((op, idx) => (
-                    <li key={idx}>
-                      {op.descripcion} - {new Date(op.fecha).toLocaleDateString()}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500">No hay operaciones registradas</p>
-              )}
-              <form
-  className="mt-2 flex flex-col md:flex-row gap-2"
-  onSubmit={(e) => handleAgregarVacuna(e, m._id)}
->
-  <input
-    type="text"
-    name="nombre"
-    placeholder="Nombre vacuna"
-    className="border rounded px-2 py-1 text-sm w-full md:w-auto"
-    required
-  />
-  <input
-    type="date"
-    name="fecha"
-    className="border rounded px-2 py-1 text-sm w-full md:w-auto"
-    required
-  />
-  <button 
-    type="submit"
-    className="bg-purple-500 text-white px-3 py-1 rounded hover:bg-purple-600 text-sm"
-  >
-    Agregar
-  </button>
-</form>
+                    {/* Información básica */}
+                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-semibold text-gray-700">Edad:</span>
+                          <p className="text-gray-600">{m.edad ? `${m.edad} años` : "No especificada"}</p>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-700">Género:</span>
+                          <p className="text-gray-600">{m.genero || "No especificado"}</p>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-700">Estado:</span>
+                          <p className="text-gray-600">{m.estado || "No especificado"}</p>
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-700">Enfermedades:</span>
+                          <p className="text-gray-600">{m.enfermedades || "Ninguna"}</p>
+                        </div>
+                      </div>
+                      {m.historial && (
+                        <div className="mt-4">
+                          <span className="font-semibold text-gray-700">Historial:</span>
+                          <p className="text-gray-600 mt-1">{m.historial}</p>
+                        </div>
+                      )}
+                    </div>
 
+                    {/* Sección de vacunas */}
+                    <div className="mb-6">
+                      <h4 className="font-semibold text-purple-600 mb-3 text-lg">Vacunas</h4>
+                      {m.vacunas && m.vacunas.length > 0 ? (
+                        <div className="space-y-2 mb-4">
+                          {m.vacunas.map((v, idx) => (
+                            <div key={idx} className="flex justify-between items-center p-2 bg-green-50 rounded">
+                              <span className="font-medium text-green-800">{v.nombre}</span>
+                              <span className="text-green-600 text-sm">{new Date(v.fecha).toLocaleDateString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 mb-4">No hay vacunas registradas</p>
+                      )}
+                      <form
+                        className="grid grid-cols-1 md:grid-cols-3 gap-2"
+                        onSubmit={(e) => handleAgregarVacuna(e, m._id)}
+                      >
+                        <input
+                          type="text"
+                          name="nombre"
+                          placeholder="Nombre vacuna"
+                          className="border rounded px-3 py-2 text-sm"
+                          required
+                        />
+                        <input
+                          type="date"
+                          name="fecha"
+                          className="border rounded px-3 py-2 text-sm"
+                          required
+                        />
+                        <button
+                          type="submit"
+                          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 text-sm font-medium"
+                        >
+                          Agregar Vacuna
+                        </button>
+                      </form>
+                    </div>
+
+                    {/* Sección de operaciones */}
+                    <div>
+                      <h4 className="font-semibold text-purple-600 mb-3 text-lg">Operaciones</h4>
+                      {m.operaciones && m.operaciones.length > 0 ? (
+                        <div className="space-y-3 mb-4">
+                          {m.operaciones.map((op, idx) => (
+                            <div key={idx} className="p-3 bg-blue-50 rounded">
+                              <div className="flex justify-between items-start mb-1">
+                                <span className="font-medium text-blue-800">{op.nombre}</span>
+                                <span className="text-blue-600 text-sm">{new Date(op.fecha).toLocaleDateString()}</span>
+                              </div>
+                              <p className="text-blue-700 text-sm">{op.descripcion}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 mb-4">No hay operaciones registradas</p>
+                      )}
+                      <form
+                        className="space-y-2"
+                        onSubmit={(e) => handleAgregarOperacion(e, m._id)}
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            name="nombre"
+                            placeholder="Nombre operación"
+                            className="border rounded px-3 py-2 text-sm"
+                            required
+                          />
+                          <input
+                            type="date"
+                            name="fecha"
+                            className="border rounded px-3 py-2 text-sm"
+                            required
+                          />
+                        </div>
+                        <textarea
+                          name="descripcion"
+                          placeholder="Descripción de la operación"
+                          className="w-full border rounded px-3 py-2 text-sm"
+                          rows="2"
+                          required
+                        />
+                        <button
+                          type="submit"
+                          className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm font-medium"
+                        >
+                          Agregar Operación
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
-        ))
-      )}
-    </div>
-  </div>
-)}
-
-        
+        )}
       </main>
     </div>
   );

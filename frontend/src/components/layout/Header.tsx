@@ -10,7 +10,6 @@ const Header: React.FC = () => {
 
   const isActive = (path: string) => location.pathname === path;
 
-  // 🔹 Estado para usuario
   const [user, setUser] = useState<{
     username: string;
     id: string;
@@ -18,7 +17,6 @@ const Header: React.FC = () => {
     role?: string;
   } | null>(null);
 
-  // 🔹 Cargar usuario inicial
   useEffect(() => {
     const loadUser = () => {
       const rawUser = localStorage.getItem("user");
@@ -42,7 +40,6 @@ const Header: React.FC = () => {
     loadUser();
   }, []);
 
-  // 🔹 Detectar cambios en localStorage
   useEffect(() => {
     const handleStorageChange = () => {
       const rawUser = localStorage.getItem("user");
@@ -67,7 +64,6 @@ const Header: React.FC = () => {
     return () => window.removeEventListener("storage", handleStorageChange);
   }, []);
 
-  // 🔹 Iniciales para el avatar
   const getInitials = (name: string) => {
     if (!name) return "U";
     return name
@@ -88,7 +84,6 @@ const Header: React.FC = () => {
     navigate("/");
   };
 
-  // 🔹 Cerrar menú si se hace clic fuera
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -103,7 +98,6 @@ const Header: React.FC = () => {
     <header className="bg-white shadow-lg sticky top-0 z-50 border-b border-gray-100">
       <div className="container mx-auto px-6 py-4">
         <div className="flex justify-between items-center">
-          {/* LOGO */}
           <Link to="/" className="flex items-center space-x-3 group">
             <div className="relative">
               <div className="w-10 h-10 bg-gradient-to-br from-[TU_COLOR_PRINCIPAL] to-[TU_COLOR_HOVER] rounded-2xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-all duration-300 group-hover:scale-105">
@@ -117,13 +111,10 @@ const Header: React.FC = () => {
               <h1 className="text-xl font-bold text-gray-900 group-hover:text-gray-700 transition-colors">
                 {brandConfig.name}
               </h1>
-              <p className="text-xs text-gray-500 -mt-1">
-                {brandConfig.slogan}
-              </p>
+              <p className="text-xs text-gray-500 -mt-1">{brandConfig.slogan}</p>
             </div>
           </Link>
 
-          {/* NAV PRINCIPAL */}
           <nav className="hidden lg:flex items-center space-x-1">
             {[
               { path: "/", label: "Inicio" },
@@ -146,9 +137,7 @@ const Header: React.FC = () => {
             ))}
           </nav>
 
-          {/* DERECHA */}
           <div className="flex items-center space-x-4">
-            {/* Favoritos */}
             <button className="p-2 text-gray-400 hover:text-red-500 transition-colors duration-200 relative">
               <svg
                 className="w-6 h-6"
@@ -165,7 +154,6 @@ const Header: React.FC = () => {
               </svg>
             </button>
 
-            {/* Usuario */}
             {!user ? (
               <Link
                 to="/login"
@@ -252,7 +240,6 @@ const Header: React.FC = () => {
                         Mis Mascotas
                       </Link>
 
-                      {/* SOLO ADMIN VE ESTE BOTÓN */}
                       {user.role === "admin" && (
                         <Link
                           to="/admin"
@@ -303,7 +290,6 @@ const Header: React.FC = () => {
               </div>
             )}
 
-            {/* Carrito */}
             <Link to="/cart" className="relative group">
               <div className="flex items-center space-x-3 bg-gray-900 text-white px-4 py-3 rounded-2xl hover:bg-gray-800 transition-all duration-200 shadow-lg hover:shadow-xl">
                 <div className="relative">
@@ -341,7 +327,6 @@ const Header: React.FC = () => {
               </div>
             </Link>
 
-            {/* Menú móvil */}
             <button className="lg:hidden p-2 text-gray-600 hover:text-gray-900 transition-colors">
               <svg
                 className="w-6 h-6"
@@ -360,7 +345,6 @@ const Header: React.FC = () => {
           </div>
         </div>
 
-        {/* NAV móvil */}
         <nav className="lg:hidden mt-4 flex justify-center space-x-1 overflow-x-auto pb-2">
           {[
             { path: "/", label: "Inicio", icon: "🏠" },

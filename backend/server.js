@@ -415,7 +415,7 @@ router.get("/mascotas/:id", verifyToken, async (req, res) => {
   }
 });
 
-// 👉 Agregar vacuna a mascota
+// Agregar vacuna a mascota
 router.post("/mascotas/:id/vacunas", verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -454,6 +454,45 @@ router.post("/mascotas/:id/vacunas", verifyToken, async (req, res) => {
   }
 });
 
+// Agregar operación a mascota
+router.post("/mascotas/:id/operaciones", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nombre, descripcion, fecha, imagen } = req.body;
+
+    // Validaciones
+    if (!nombre || !descripcion || !fecha) {
+      return res.status(400).json({ error: "Nombre, descripción y fecha de la operación son obligatorios" });
+    }
+
+    if (!nombre.trim() || !descripcion.trim()) {
+      return res.status(400).json({ error: "El nombre y descripción no pueden estar vacíos" });
+    }
+
+    const mascota = await Mascota.findById(id);
+    if (!mascota) return res.status(404).json({ msg: "Mascota no encontrada" });
+
+    // Verificar permisos: admin o dueño
+    if (req.user.role !== "admin" && mascota.usuario.toString() !== req.user.id) {
+      return res.status(403).json({ error: "No autorizado para agregar operaciones a esta mascota" });
+    }
+
+    // Agregar operación al array
+    mascota.operaciones.push({
+      nombre: nombre.trim(),
+      descripcion: descripcion.trim(),
+      fecha: new Date(fecha),
+      imagen: imagen || ""
+    });
+
+    await mascota.save();
+
+    res.json({ msg: "Operación agregada correctamente", mascota });
+  } catch (err) {
+    console.error("Error agregando operación:", err);
+    res.status(500).json({ msg: "Error al agregar operación", error: err.message });
+  }
+});
 
 // Eliminar mascota
 router.delete("/mascotas/:id", verifyToken, async (req, res) => {
@@ -538,12 +577,8 @@ router.post("/productos", verifyToken, upload.single("imagen"), async (req, res)
   }
 });
 
-
-
-
-
-
-router.get("/productos", verifyToken, async (req, res) => {
+// ✅ Listar productos sin necesidad de login
+router.get("/productos", async (req, res) => {
   try {
     const productos = await Producto.find().populate("usuario", "name email");
 
@@ -600,6 +635,7 @@ router.delete("/productos/:id", verifyToken, async (req, res) => {
     res.status(500).json({ msg: "Error al eliminar producto", error: err.message });
   }
 });
+
 
 /* ======================
    Salud

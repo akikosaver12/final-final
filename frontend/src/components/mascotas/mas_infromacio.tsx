@@ -1,6 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+interface Vacuna {
+  nombre: string;
+  fecha: string;
+  imagen?: string;
+}
+
+interface Operacion {
+  nombre: string;
+  descripcion: string;
+  fecha: string;
+  imagen?: string;
+}
+
 interface Mascota {
   _id: string;
   nombre?: string;
@@ -9,8 +22,8 @@ interface Mascota {
   raza?: string;
   edad?: number;
   genero?: string;
-  enfermedades?: string;
-  historial?: string;
+  vacunas?: Vacuna[];
+  operaciones?: Operacion[];
   imagen?: string;
   usuario?: {
     _id: string;
@@ -128,13 +141,34 @@ const MascotaInfo: React.FC = () => {
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold">Enfermedades</h2>
-          <p>{mascota.enfermedades || "Ninguna reportada"}</p>
+          <h2 className="text-lg font-semibold">Vacunas</h2>
+          {mascota.vacunas && mascota.vacunas.length > 0 ? (
+            <ul className="list-disc ml-5">
+              {mascota.vacunas.map((v, i) => (
+                <li key={i}>
+                  {v.nombre} - {new Date(v.fecha).toLocaleDateString()}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No hay vacunas registradas</p>
+          )}
         </section>
 
         <section>
-          <h2 className="text-lg font-semibold">Historial médico</h2>
-          <p>{mascota.historial || "Sin historial médico registrado"}</p>
+          <h2 className="text-lg font-semibold">Operaciones</h2>
+          {mascota.operaciones && mascota.operaciones.length > 0 ? (
+            <ul className="list-disc ml-5">
+              {mascota.operaciones.map((op, i) => (
+                <li key={i}>
+                  <strong>{op.nombre}</strong> - {op.descripcion} (
+                  {new Date(op.fecha).toLocaleDateString()})
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>No hay operaciones registradas</p>
+          )}
         </section>
       </div>
 
@@ -190,7 +224,7 @@ const MascotaCard: React.FC<{ mascota: Mascota }> = ({ mascota }) => {
       }
 
       alert("Mascota eliminada con éxito");
-      navigate("/mascotas"); // 👈 después de eliminar vuelve a lista de mascotas
+      navigate("/mascotas");
     } catch (err) {
       console.error("Error eliminando mascota:", err);
       alert("Ocurrió un error al eliminar la mascota");
@@ -199,15 +233,12 @@ const MascotaCard: React.FC<{ mascota: Mascota }> = ({ mascota }) => {
 
   return (
     <div className="absolute top-4 right-4 flex gap-4">
-      {/* Botón Editar */}
       <button
         className="px-4 py-1 text-sm font-semibold border border-yellow-400 text-yellow-400 rounded hover:bg-yellow-400 hover:text-white transition"
         onClick={() => navigate(`/edit/${mascota._id}`)}
       >
         Editar
       </button>
-
-      {/* Botón Eliminar */}
       <button
         className="px-4 py-1 text-sm font-semibold border border-red-400 text-red-400 rounded hover:bg-red-400 hover:text-white transition"
         onClick={handleDelete}
