@@ -1,4 +1,4 @@
-import React from 'react';
+import React from 'react'; 
 import { Link } from 'react-router-dom';
 import { brandConfig } from '../utils/brandConfig';
 
@@ -19,13 +19,16 @@ const AboutPage: React.FC = () => {
             
             {/* TÍTULO */}
             <h1 className="text-5xl lg:text-6xl font-bold text-gray-900 mb-6">
-  Acerca de <span className="text-[TU_COLOR_PRINCIPAL]">{brandConfig.name}</span>
-</h1>
+              Acerca de <span className="text-[TU_COLOR_PRINCIPAL]">{brandConfig.name}</span>
+            </h1>
             
             {/* SUBTÍTULO */}
             <p className="text-xl text-gray-600 leading-relaxed">
-              Conoce la historia, misión y el equipo detrás de Mi Tienda Online. 
-              Una empresa comprometida con la excelencia y la innovación tecnológica.
+              En nuestra veterinaria nos apasiona el cuidado y bienestar de cada mascota. Contamos con un equipo de profesionales comprometidos que brindan atención médica de calidad, acompañamiento personalizado y todo el cariño que tus compañeros de vida merecen.
+              <br /><br />
+              Ofrecemos servicios de consulta general, vacunación, desparasitación, cirugías, estética animal y asesoría en nutrición, siempre con la más alta dedicación y tecnología para garantizar la salud y felicidad de tu mejor amigo.
+              <br /><br />
+              Nuestra misión es ser más que una clínica: queremos ser un aliado de confianza para ti y tu mascota, construyendo juntos una vida llena de salud, amor y compañía. 🐾
             </p>
           </div>
         </div>
@@ -45,24 +48,16 @@ const AboutPage: React.FC = () => {
               </div>
               
               <div className="prose prose-lg text-gray-600 max-w-none">
-  <p className="mb-6 text-lg leading-relaxed">
-    Fundada en <strong className="text-gray-900">{brandConfig.company.foundedYear}</strong>, 
-    <strong className="text-[TU_COLOR_PRINCIPAL]"> {brandConfig.name}</strong> nació con la visión de 
-    [TU_HISTORIA_DE_ORIGEN - Por qué comenzaste este negocio, qué problema resuelves].
-  </p>
-  
-  <p className="mb-6 text-lg leading-relaxed">
-    [SEGUNDO_PÁRRAFO - Tu evolución, crecimiento, logros alcanzados]
-  </p>
-  
-  <p className="text-lg leading-relaxed">
-    Nuestro crecimiento se basa en: 
-    <strong className="text-gray-900"> {brandConfig.company.values[0]}</strong>, 
-    <strong className="text-gray-900"> {brandConfig.company.values[1]}</strong> y 
-    <strong className="text-gray-900"> {brandConfig.company.values[2]}</strong>. 
-    [EXPLICA_CÓMO_APLICAS_ESTOS_VALORES]
-  </p>
-</div>
+                <p className="mb-6 text-lg leading-relaxed">
+                  Nuestra historia comenzó con un sueño: ofrecer un lugar en el que las mascotas recibieran no solo atención médica, sino también cariño y respeto. Iniciamos como un pequeño consultorio impulsado por la vocación y el amor hacia los animales, y poco a poco fuimos creciendo gracias a la confianza de cada familia que nos ha acompañado en el camino.
+                  <br /><br />
+                  Con dedicación y esfuerzo, hemos consolidado un equipo profesional comprometido con el bienestar animal y ampliado nuestros servicios para brindar una atención más completa. Hoy seguimos trabajando con la misma pasión del primer día, convencidos de que cada mascota merece vivir sana, feliz y rodeada de cuidado.
+                </p>
+                
+                <p className="text-lg leading-relaxed">
+                  Nuestro crecimiento se ha basado en tres pilares fundamentales: la confianza de nuestros clientes, la calidad de nuestros servicios y la constante innovación en el cuidado animal. Gracias al compromiso de nuestro equipo y a la implementación de nuevas tecnologías veterinarias, hemos logrado evolucionar sin perder la cercanía y el trato humano que nos caracteriza. Cada paso que damos está inspirado en el amor por las mascotas y en el deseo de ofrecerles siempre lo mejor.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -75,11 +70,12 @@ const AboutPage: React.FC = () => {
             
             <div className="mb-8">
               <h2 className="text-4xl lg:text-5xl font-bold mb-4">
-                ¿Listo para comenzar?
+                Explora nuestro catalogo de productos
               </h2>
+              
               <p className="text-xl leading-relaxed opacity-90">
-                Únete a miles de clientes satisfechos y descubre por qué somos la mejor opción 
-                para tus necesidades tecnológicas. Tu próxima compra te está esperando.
+                En nuestra veterinaria ofrecemos una amplia gama de productos diseñados para garantizar la salud, el bienestar y la felicidad de tus mascotas. Contamos con alimentos balanceados de alta calidad, suplementos nutricionales, productos de higiene y cuidado, juguetes interactivos y accesorios que se adaptan a las necesidades de cada etapa de vida.
+                Cada producto es cuidadosamente seleccionado para asegurar que cumpla con los más altos estándares de calidad y confianza, porque sabemos que tu mascota es parte de tu familia.
               </p>
             </div>
             

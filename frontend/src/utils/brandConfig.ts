@@ -1,6 +1,6 @@
 export const brandConfig = {
   // INFORMACIÓN BÁSICA DE LA MARCA
-  name: 'tus mascota',           // Reemplazar con tu nombre
+  name: 'Tus mascota',           // Reemplazar con tu nombre
   slogan: 'la salud de tu mascota es nuestra pioridada',         // Reemplazar con tu slogan
   
   // LOGO E IMÁGENES
@@ -31,18 +31,13 @@ export const brandConfig = {
     linkedin: 'https://linkedin.com/company/tunombre'
   },
   
-  // INFORMACIÓN EMPRESARIAL
-  company: {
-    foundedYear: 2024,
-    description: 'unas de las empresas mas segura y comfiables de todas ',
-    mission: 'cuidar',
-    vision: 'Siempre matener a familias unidas ',
-    values: [
-      'Calidad excepcional',
-      'Servicio al cliente',
-      'Innovación constante'
-    ]
-  },
+  // INFORMACIÓN EMPRESARIAL 
+company: {
+  description: '“Somos una clínica veterinaria altamente capacitada, dedicada al cuidado integral de tu mascota. Contamos con un equipo profesional, tecnología moderna y un servicio cercano para garantizar salud, bienestar y calidad de vida a tus compañeros de cuatro patas”',
+  mission: 'cuidar',
+  vision: 'Siempre mantener a familias unidas',
+},
+
   
   // CONFIGURACIÓN DE NEGOCIO
   business: {
