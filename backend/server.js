@@ -99,6 +99,26 @@ const productoSchema = new mongoose.Schema(
 );
 const Producto = mongoose.model("Producto", productoSchema);
 
+// 🆕 ESQUEMA DE CITAS CORREGIDO
+const citaSchema = new mongoose.Schema(
+  {
+    mascota: { type: mongoose.Schema.Types.ObjectId, ref: "Mascota", required: true },
+    usuario: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    tipo: { type: String, required: true, enum: ["consulta", "operacion", "vacunacion", "emergencia"] },
+    fecha: { type: Date, required: true },
+    hora: { type: String, required: true }, // formato "HH:mm"
+    motivo: { type: String, required: true, trim: true },
+    estado: { type: String, default: "pendiente", enum: ["pendiente", "confirmada", "cancelada", "completada"] },
+    notas: { type: String, default: "", trim: true },
+  },
+  { timestamps: true }
+);
+
+// Índice único para evitar doble reserva en la misma fecha y hora
+citaSchema.index({ fecha: 1, hora: 1 }, { unique: true });
+
+const Cita = mongoose.model("Cita", citaSchema);
+
 /* ======================
    Middlewares de Auth
    ====================== */
@@ -144,6 +164,51 @@ const upload = multer({
   },
   limits: { fileSize: 5 * 1024 * 1024 } // 5MB límite
 });
+
+/* ======================
+   🆕 FUNCIONES DE UTILIDAD CORREGIDAS
+   ====================== */
+const esHorarioValido = (hora) => {
+  const [hours, minutes] = hora.split(':').map(Number);
+  const timeInMinutes = hours * 60 + minutes;
+  
+  // 7:00 AM - 12:00 PM (420 - 720 minutos)
+  const mañanaInicio = 7 * 60; // 420
+  const mañanaFin = 12 * 60; // 720
+  
+  // 2:00 PM - 6:00 PM (840 - 1080 minutos)
+  const tardeInicio = 14 * 60; // 840
+  const tardeFin = 18 * 60; // 1080
+  
+  return (timeInMinutes >= mañanaInicio && timeInMinutes <= mañanaFin) ||
+         (timeInMinutes >= tardeInicio && timeInMinutes <= tardeFin);
+};
+
+// 🔧 FUNCIÓN DE FECHA CORREGIDA
+const esFechaValida = (fechaString) => {
+  try {
+    // Crear fecha al inicio del día para evitar problemas de zona horaria
+    const fechaCita = new Date(fechaString + 'T00:00:00');
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0); // Normalizar a inicio del día
+    
+    // No se pueden agendar citas en el pasado
+    if (fechaCita < hoy) return false;
+    
+    // No se pueden agendar citas los domingos (0 = domingo)
+    if (fechaCita.getDay() === 0) return false;
+    
+    return true;
+  } catch (error) {
+    console.error('Error validando fecha:', error);
+    return false;
+  }
+};
+
+// 🔧 FUNCIÓN HELPER PARA NORMALIZAR FECHAS
+const normalizarFecha = (fechaString) => {
+  return new Date(fechaString + 'T00:00:00');
+};
 
 /* ======================
    Rutas de Autenticación
@@ -258,20 +323,19 @@ router.post("/mascotas", verifyToken, upload.single("imagen"), async (req, res) 
 
     // Validaciones obligatorias
     if (!nombre || !especie || !raza || !edad || !genero || !estado) {
-  const faltantes = [];
-  if (!nombre) faltantes.push("nombre");
-  if (!especie) faltantes.push("especie");
-  if (!raza) faltantes.push("raza");
-  if (!edad) faltantes.push("edad");
-  if (!genero) faltantes.push("genero");
-  if (!estado) faltantes.push("estado");
+      const faltantes = [];
+      if (!nombre) faltantes.push("nombre");
+      if (!especie) faltantes.push("especie");
+      if (!raza) faltantes.push("raza");
+      if (!edad) faltantes.push("edad");
+      if (!genero) faltantes.push("genero");
+      if (!estado) faltantes.push("estado");
 
-  return res.status(400).json({
-    error: "Faltan campos obligatorios",
-    campos: faltantes,
-  });
-}
-
+      return res.status(400).json({
+        error: "Faltan campos obligatorios",
+        campos: faltantes,
+      });
+    }
 
     const edadNum = parseInt(edad);
     if (isNaN(edadNum) || edadNum < 0 || edadNum > 15) {
@@ -298,6 +362,7 @@ router.post("/mascotas", verifyToken, upload.single("imagen"), async (req, res) 
     });
 
     await nuevaMascota.save();
+    console.log('✅ Mascota registrada:', nuevaMascota.nombre, 'para usuario:', req.user.id);
     res.status(201).json({ msg: "Mascota registrada", mascota: nuevaMascota });
   } catch (err) {
     console.error("Error creando mascota:", err);
@@ -312,7 +377,9 @@ router.post("/mascotas", verifyToken, upload.single("imagen"), async (req, res) 
 
 router.get("/mascotas", verifyToken, async (req, res) => {
   try {
+    console.log('📋 Obteniendo mascotas para usuario:', req.user.id);
     const mascotas = await Mascota.find({ usuario: req.user.id }).populate("usuario", "name email");
+    console.log('📋 Mascotas encontradas:', mascotas.length);
 
     const mascotasConImagen = mascotas.map((m) => ({
       ...m.toObject(),
@@ -514,17 +581,304 @@ router.delete("/mascotas/:id", verifyToken, async (req, res) => {
 });
 
 /* ======================
+   🆕 RUTAS DE CITAS CORREGIDAS
+   ====================== */
+
+// Crear nueva cita
+router.post("/citas", verifyToken, async (req, res) => {
+  try {
+    console.log('📅 Creando nueva cita:', req.body);
+    const { mascotaId, tipo, fecha, hora, motivo, notas } = req.body;
+
+    // Validaciones obligatorias
+    if (!mascotaId || !tipo || !fecha || !hora || !motivo) {
+      return res.status(400).json({ 
+        error: "Los campos mascota, tipo, fecha, hora y motivo son obligatorios" 
+      });
+    }
+
+    // Validar que la mascota existe y pertenece al usuario
+    const mascota = await Mascota.findById(mascotaId);
+    if (!mascota) {
+      return res.status(404).json({ error: "Mascota no encontrada" });
+    }
+
+    if (req.user.role !== "admin" && mascota.usuario.toString() !== req.user.id) {
+      return res.status(403).json({ error: "No autorizado para agendar cita para esta mascota" });
+    }
+
+    // Validar fecha
+    if (!esFechaValida(fecha)) {
+      return res.status(400).json({ 
+        error: "Fecha inválida. No se pueden agendar citas en el pasado o los domingos" 
+      });
+    }
+
+    // Validar horario
+    if (!esHorarioValido(hora)) {
+      return res.status(400).json({ 
+        error: "Horario inválido. Los horarios de atención son: 7:00AM-12:00PM y 2:00PM-6:00PM" 
+      });
+    }
+
+    // 🔧 VERIFICAR DISPONIBILIDAD CORREGIDO
+    const fechaNormalizada = normalizarFecha(fecha);
+    const citaExistente = await Cita.findOne({ 
+      fecha: fechaNormalizada, 
+      hora: hora 
+    });
+    
+    if (citaExistente) {
+      return res.status(400).json({ 
+        error: "Ya existe una cita agendada para esa fecha y hora" 
+      });
+    }
+
+    // Crear la cita
+    const nuevaCita = new Cita({
+      mascota: mascotaId,
+      usuario: req.user.id,
+      tipo,
+      fecha: fechaNormalizada,
+      hora,
+      motivo: motivo.trim(),
+      notas: notas ? notas.trim() : "",
+    });
+
+    await nuevaCita.save();
+    console.log('✅ Cita creada exitosamente:', nuevaCita._id, 'para mascota:', mascota.nombre);
+    
+    // Poblar los datos para la respuesta
+    await nuevaCita.populate([
+      { path: 'mascota', select: 'nombre especie raza' },
+      { path: 'usuario', select: 'name email' }
+    ]);
+
+    res.status(201).json({ 
+      message: "Cita agendada exitosamente",
+      cita: nuevaCita 
+    });
+
+  } catch (err) {
+    console.error("❌ Error creando cita:", err);
+    if (err.code === 11000) {
+      return res.status(400).json({ 
+        error: "Ya existe una cita agendada para esa fecha y hora" 
+      });
+    }
+    res.status(500).json({ 
+      error: "Error al agendar cita",
+      details: err.message 
+    });
+  }
+});
+
+// Listar citas del usuario
+router.get("/citas", verifyToken, async (req, res) => {
+  try {
+    console.log('📋 Obteniendo citas para usuario:', req.user.id);
+    let query = {};
+    
+    // Si no es admin, solo puede ver sus propias citas
+    if (req.user.role !== "admin") {
+      query.usuario = req.user.id;
+    }
+
+    const citas = await Cita.find(query)
+      .populate('mascota', 'nombre especie raza imagen')
+      .populate('usuario', 'name email')
+      .sort({ fecha: 1, hora: 1 });
+
+    console.log('📋 Citas encontradas:', citas.length);
+    res.json(citas);
+  } catch (err) {
+    console.error("❌ Error listando citas:", err);
+    res.status(500).json({ error: "Error al obtener citas" });
+  }
+});
+
+// 🔧 OBTENER HORARIOS DISPONIBLES CORREGIDO
+router.get("/citas/horarios-disponibles/:fecha", verifyToken, async (req, res) => {
+  try {
+    const { fecha } = req.params;
+    console.log('🕐 Obteniendo horarios para fecha:', fecha);
+    
+    if (!esFechaValida(fecha)) {
+      return res.status(400).json({ 
+        error: "Fecha inválida. No se pueden agendar citas en el pasado o los domingos" 
+      });
+    }
+
+    // 🔧 BUSCAR CITAS EXISTENTES CORREGIDO
+    const fechaNormalizada = normalizarFecha(fecha);
+    const citasExistentes = await Cita.find({ fecha: fechaNormalizada }).select('hora');
+    const horasOcupadas = citasExistentes.map(cita => cita.hora);
+    
+    console.log('⏰ Horas ocupadas para', fecha + ':', horasOcupadas);
+
+    // Generar horarios disponibles
+    const horariosDisponibles = [];
+    
+    // Horarios de la mañana (7:00 AM - 12:00 PM)
+    for (let hora = 7; hora <= 11; hora++) {
+      for (let minutos = 0; minutos < 60; minutos += 30) {
+        const horario = `${hora.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}`;
+        if (!horasOcupadas.includes(horario)) {
+          horariosDisponibles.push({
+            hora: horario,
+            periodo: 'mañana',
+            disponible: true
+          });
+        }
+      }
+    }
+
+    // Agregar 12:00 PM
+    if (!horasOcupadas.includes('12:00')) {
+      horariosDisponibles.push({
+        hora: '12:00',
+        periodo: 'mañana',
+        disponible: true
+      });
+    }
+
+    // Horarios de la tarde (2:00 PM - 6:00 PM)
+    for (let hora = 14; hora <= 17; hora++) {
+      for (let minutos = 0; minutos < 60; minutos += 30) {
+        const horario = `${hora.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}`;
+        if (!horasOcupadas.includes(horario)) {
+          horariosDisponibles.push({
+            hora: horario,
+            periodo: 'tarde',
+            disponible: true
+          });
+        }
+      }
+    }
+
+    // Agregar 6:00 PM
+    if (!horasOcupadas.includes('18:00')) {
+      horariosDisponibles.push({
+        hora: '18:00',
+        periodo: 'tarde',
+        disponible: true
+      });
+    }
+
+    console.log('✅ Horarios disponibles generados:', horariosDisponibles.length);
+
+    res.json({
+      fecha,
+      horariosDisponibles,
+      totalDisponibles: horariosDisponibles.length
+    });
+
+  } catch (err) {
+    console.error("❌ Error obteniendo horarios:", err);
+    res.status(500).json({ error: "Error al obtener horarios disponibles" });
+  }
+});
+
+// Actualizar estado de cita (solo admin)
+router.put("/citas/:id/estado", verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { estado } = req.body;
+    
+    if (!["pendiente", "confirmada", "cancelada", "completada"].includes(estado)) {
+      return res.status(400).json({ error: "Estado inválido" });
+    }
+
+    const cita = await Cita.findById(req.params.id);
+    if (!cita) {
+      return res.status(404).json({ error: "Cita no encontrada" });
+    }
+
+    cita.estado = estado;
+    await cita.save();
+
+    await cita.populate([
+      { path: 'mascota', select: 'nombre especie raza' },
+      { path: 'usuario', select: 'name email' }
+    ]);
+
+    console.log('📝 Estado de cita actualizado:', req.params.id, 'a', estado);
+
+    res.json({ 
+      message: "Estado de cita actualizado",
+      cita 
+    });
+
+  } catch (err) {
+    console.error("❌ Error actualizando cita:", err);
+    res.status(500).json({ error: "Error al actualizar cita" });
+  }
+});
+
+// Cancelar cita (usuario puede cancelar su propia cita)
+router.delete("/citas/:id", verifyToken, async (req, res) => {
+  try {
+    const cita = await Cita.findById(req.params.id);
+    if (!cita) {
+      return res.status(404).json({ error: "Cita no encontrada" });
+    }
+
+    // Solo el dueño de la cita o admin puede cancelarla
+    if (req.user.role !== "admin" && cita.usuario.toString() !== req.user.id) {
+      return res.status(403).json({ error: "No autorizado para cancelar esta cita" });
+    }
+
+    // Verificar que la cita no esté ya completada
+    if (cita.estado === "completada") {
+      return res.status(400).json({ error: "No se puede cancelar una cita completada" });
+    }
+
+    await cita.deleteOne();
+    console.log('❌ Cita cancelada:', req.params.id);
+    res.json({ message: "Cita cancelada exitosamente" });
+
+  } catch (err) {
+    console.error("❌ Error cancelando cita:", err);
+    res.status(500).json({ error: "Error al cancelar cita" });
+  }
+});
+
+/* ======================
    Dashboard Admin
    ====================== */
 router.get("/admin/dashboard", verifyToken, isAdmin, async (req, res) => {
   try {
-    const [totalUsuarios, totalProductos, totalMascotas] = await Promise.all([
+    const [totalUsuarios, totalProductos, totalMascotas, totalCitas] = await Promise.all([
       User.countDocuments(),
       Producto.countDocuments(),
       Mascota.countDocuments(),
+      Cita.countDocuments(),
     ]);
 
-    res.json({ totalUsuarios, totalProductos, totalMascotas });
+    // Estadísticas adicionales de citas
+    const citasPorEstado = await Cita.aggregate([
+      {
+        $group: {
+          _id: "$estado",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const citasHoy = await Cita.countDocuments({
+      fecha: {
+        $gte: new Date(new Date().setHours(0, 0, 0, 0)),
+        $lt: new Date(new Date().setHours(23, 59, 59, 999))
+      }
+    });
+
+    res.json({ 
+      totalUsuarios, 
+      totalProductos, 
+      totalMascotas, 
+      totalCitas,
+      citasPorEstado,
+      citasHoy
+    });
   } catch (error) {
     console.error("Error en dashboard:", error);
     res.status(500).json({ error: "Error al obtener datos del dashboard" });
@@ -577,7 +931,7 @@ router.post("/productos", verifyToken, upload.single("imagen"), async (req, res)
   }
 });
 
-// ✅ Listar productos sin necesidad de login
+// Listar productos sin necesidad de login
 router.get("/productos", async (req, res) => {
   try {
     const productos = await Producto.find().populate("usuario", "name email");
@@ -636,11 +990,203 @@ router.delete("/productos/:id", verifyToken, async (req, res) => {
   }
 });
 
+/* ======================
+   Rutas adicionales para admin - Gestión de citas
+   ====================== */
+
+// Obtener todas las citas (solo admin)
+router.get("/admin/citas", verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { fecha, estado, tipo } = req.query;
+    let query = {};
+
+    // Filtros opcionales
+    if (fecha) {
+      const fechaNormalizada = normalizarFecha(fecha);
+      query.fecha = fechaNormalizada;
+    }
+
+    if (estado) {
+      query.estado = estado;
+    }
+
+    if (tipo) {
+      query.tipo = tipo;
+    }
+
+    const citas = await Cita.find(query)
+      .populate('mascota', 'nombre especie raza imagen')
+      .populate('usuario', 'name email')
+      .sort({ fecha: 1, hora: 1 });
+
+    res.json(citas);
+  } catch (err) {
+    console.error("Error obteniendo citas admin:", err);
+    res.status(500).json({ error: "Error al obtener citas" });
+  }
+});
+
+// Obtener cita específica (admin o dueño)
+router.get("/citas/:id", verifyToken, async (req, res) => {
+  try {
+    const cita = await Cita.findById(req.params.id)
+      .populate('mascota', 'nombre especie raza imagen usuario')
+      .populate('usuario', 'name email');
+
+    if (!cita) {
+      return res.status(404).json({ error: "Cita no encontrada" });
+    }
+
+    // Verificar permisos
+    if (req.user.role !== "admin" && cita.usuario._id.toString() !== req.user.id) {
+      return res.status(403).json({ error: "No autorizado para ver esta cita" });
+    }
+
+    res.json(cita);
+  } catch (err) {
+    console.error("Error obteniendo cita:", err);
+    res.status(500).json({ error: "Error al obtener cita" });
+  }
+});
+
+// Actualizar cita completa (admin o dueño antes de que sea confirmada)
+router.put("/citas/:id", verifyToken, async (req, res) => {
+  try {
+    const cita = await Cita.findById(req.params.id);
+    if (!cita) {
+      return res.status(404).json({ error: "Cita no encontrada" });
+    }
+
+    // Solo admin o dueño pueden modificar
+    if (req.user.role !== "admin" && cita.usuario.toString() !== req.user.id) {
+      return res.status(403).json({ error: "No autorizado para modificar esta cita" });
+    }
+
+    // Los usuarios solo pueden modificar citas pendientes
+    if (req.user.role !== "admin" && cita.estado !== "pendiente") {
+      return res.status(400).json({ error: "Solo se pueden modificar citas pendientes" });
+    }
+
+    const { tipo, fecha, hora, motivo, notas } = req.body;
+
+    // Validar nuevos datos si se proporcionan
+    if (fecha && !esFechaValida(fecha)) {
+      return res.status(400).json({ 
+        error: "Fecha inválida. No se pueden agendar citas en el pasado o los domingos" 
+      });
+    }
+
+    if (hora && !esHorarioValido(hora)) {
+      return res.status(400).json({ 
+        error: "Horario inválido. Los horarios de atención son: 7:00AM-12:00PM y 2:00PM-6:00PM" 
+      });
+    }
+
+    // Verificar disponibilidad si cambia fecha u hora
+    if ((fecha && fecha !== cita.fecha.toISOString().split('T')[0]) || 
+        (hora && hora !== cita.hora)) {
+      const fechaNormalizada = fecha ? normalizarFecha(fecha) : cita.fecha;
+      const citaExistente = await Cita.findOne({ 
+        fecha: fechaNormalizada, 
+        hora: hora || cita.hora,
+        _id: { $ne: cita._id }
+      });
+      
+      if (citaExistente) {
+        return res.status(400).json({ 
+          error: "Ya existe una cita agendada para esa fecha y hora" 
+        });
+      }
+    }
+
+    // Actualizar campos
+    if (tipo) cita.tipo = tipo;
+    if (fecha) cita.fecha = normalizarFecha(fecha);
+    if (hora) cita.hora = hora;
+    if (motivo) cita.motivo = motivo.trim();
+    if (notas !== undefined) cita.notas = notas.trim();
+
+    await cita.save();
+    
+    await cita.populate([
+      { path: 'mascota', select: 'nombre especie raza' },
+      { path: 'usuario', select: 'name email' }
+    ]);
+
+    res.json({ 
+      message: "Cita actualizada exitosamente",
+      cita 
+    });
+
+  } catch (err) {
+    console.error("Error actualizando cita:", err);
+    res.status(500).json({ error: "Error al actualizar cita" });
+  }
+});
+
+// Obtener estadísticas de citas por fecha (admin)
+router.get("/admin/citas/estadisticas", verifyToken, isAdmin, async (req, res) => {
+  try {
+    const hoy = new Date();
+    const inicioMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const finMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0);
+
+    const estadisticas = await Cita.aggregate([
+      {
+        $match: {
+          fecha: { $gte: inicioMes, $lte: finMes }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            dia: { $dayOfMonth: "$fecha" },
+            estado: "$estado"
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.dia",
+          estados: {
+            $push: {
+              estado: "$_id.estado",
+              count: "$count"
+            }
+          },
+          total: { $sum: "$count" }
+        }
+      },
+      {
+        $sort: { "_id": 1 }
+      }
+    ]);
+
+    res.json({
+      mes: hoy.getMonth() + 1,
+      año: hoy.getFullYear(),
+      estadisticas
+    });
+
+  } catch (err) {
+    console.error("Error obteniendo estadísticas:", err);
+    res.status(500).json({ error: "Error al obtener estadísticas" });
+  }
+});
 
 /* ======================
    Salud
    ====================== */
-router.get("/health", (req, res) => res.json({ ok: true }));
+router.get("/health", (req, res) => {
+  console.log('🩺 Health check solicitado');
+  res.json({ 
+    ok: true, 
+    message: "🩺 Servidor veterinario funcionando correctamente",
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'Conectado' : 'Desconectado'
+  });
+});
 
 /* ======================
    Montar rutas
@@ -648,6 +1194,37 @@ router.get("/health", (req, res) => res.json({ ok: true }));
 app.use("/api", router);
 
 /* ======================
+   Manejo de errores global
+   ====================== */
+app.use((err, req, res, next) => {
+  console.error("❌ Error no manejado:", err);
+  
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'El archivo es demasiado grande. Máximo 5MB.' });
+    }
+  }
+  
+  res.status(500).json({ 
+    error: 'Error interno del servidor',
+    message: process.env.NODE_ENV === 'development' ? err.message : 'Algo salió mal'
+  });
+});
+
+/* ======================
    Servidor
    ====================== */
-app.listen(PORT, () => console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log("🚀=======================================");
+  console.log(`🩺 Servidor Veterinario corriendo en:`);
+  console.log(`📍 http://localhost:${PORT}`);
+  console.log(`🔗 API disponible en: http://localhost:${PORT}/api`);
+  console.log("🩺 Endpoints principales:");
+  console.log("   • Salud: GET /api/health");
+  console.log("   • Mascotas: GET/POST /api/mascotas");
+  console.log("   • Citas: GET/POST /api/citas");
+  console.log("   • Horarios: GET /api/citas/horarios-disponibles/:fecha");
+  console.log("   • Admin Dashboard: GET /api/admin/dashboard");
+  console.log("   • Productos: GET /api/productos");
+  console.log("=======================================🚀");
+});

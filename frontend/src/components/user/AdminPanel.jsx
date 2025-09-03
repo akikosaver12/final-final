@@ -549,6 +549,9 @@ const AdminPanel = () => {
                       )}
                     </div>
 
+
+                    
+
                     {/* Información básica */}
                     <div className="mb-6 p-4 bg-gray-50 rounded-lg">
                       <div className="grid grid-cols-2 gap-4 text-sm">
