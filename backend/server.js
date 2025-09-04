@@ -42,13 +42,32 @@ const connectDB = async () => {
 connectDB();
 
 /* ======================
-   Modelos
+   MODELOS ACTUALIZADOS
    ====================== */
+// ESQUEMA DE USUARIO ACTUALIZADO CON TELÉFONO Y DIRECCIÓN (SIN CÓDIGO POSTAL)
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, unique: true, required: true, trim: true },
     password: { type: String, required: true },
+    telefono: { 
+      type: String, 
+      required: true, 
+      trim: true,
+      validate: {
+        validator: function(v) {
+          // Validar que el teléfono tenga entre 7 y 15 dígitos
+          return /^\+?[\d\s\-\(\)]{7,15}$/.test(v);
+        },
+        message: 'El teléfono debe tener un formato válido'
+      }
+    },
+    direccion: {
+      calle: { type: String, required: true, trim: true },
+      ciudad: { type: String, required: true, trim: true },
+      estado: { type: String, required: true, trim: true },
+      pais: { type: String, required: true, trim: true, default: 'Colombia' }
+    },
     role: { type: String, default: "user", enum: ["user", "admin"] },
   },
   { timestamps: true }
@@ -99,7 +118,6 @@ const productoSchema = new mongoose.Schema(
 );
 const Producto = mongoose.model("Producto", productoSchema);
 
-// 🆕 ESQUEMA DE CITAS CORREGIDO
 const citaSchema = new mongoose.Schema(
   {
     mascota: { type: mongoose.Schema.Types.ObjectId, ref: "Mascota", required: true },
@@ -166,7 +184,7 @@ const upload = multer({
 });
 
 /* ======================
-   🆕 FUNCIONES DE UTILIDAD CORREGIDAS
+   FUNCIONES DE UTILIDAD ACTUALIZADAS
    ====================== */
 const esHorarioValido = (hora) => {
   const [hours, minutes] = hora.split(':').map(Number);
@@ -184,7 +202,6 @@ const esHorarioValido = (hora) => {
          (timeInMinutes >= tardeInicio && timeInMinutes <= tardeFin);
 };
 
-// 🔧 FUNCIÓN DE FECHA CORREGIDA
 const esFechaValida = (fechaString) => {
   try {
     // Crear fecha al inicio del día para evitar problemas de zona horaria
@@ -205,37 +222,110 @@ const esFechaValida = (fechaString) => {
   }
 };
 
-// 🔧 FUNCIÓN HELPER PARA NORMALIZAR FECHAS
 const normalizarFecha = (fechaString) => {
   return new Date(fechaString + 'T00:00:00');
 };
 
+// NUEVAS FUNCIONES DE VALIDACIÓN (SIN CÓDIGO POSTAL)
+const validarTelefono = (telefono) => {
+  // Remover espacios y caracteres especiales para validación
+  const telefonoLimpio = telefono.replace(/[\s\-\(\)]/g, '');
+  return /^\+?[\d]{7,15}$/.test(telefonoLimpio);
+};
+
+const validarDireccion = (direccion) => {
+  const { calle, ciudad, estado } = direccion;
+  
+  if (!calle || !ciudad || !estado) {
+    return { valido: false, mensaje: "Todos los campos de dirección son obligatorios" };
+  }
+  
+  if (calle.trim().length < 5) {
+    return { valido: false, mensaje: "La dirección debe tener al menos 5 caracteres" };
+  }
+  
+  if (ciudad.trim().length < 2) {
+    return { valido: false, mensaje: "La ciudad debe tener al menos 2 caracteres" };
+  }
+  
+  if (estado.trim().length < 2) {
+    return { valido: false, mensaje: "El estado debe tener al menos 2 caracteres" };
+  }
+  
+  return { valido: true };
+};
+
 /* ======================
-   Rutas de Autenticación
+   RUTAS DE AUTENTICACIÓN ACTUALIZADAS
    ====================== */
 router.post("/register", async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, telefono, direccion, role } = req.body;
     
     // Validaciones básicas
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: "Todos los campos son obligatorios" });
+    if (!name || !email || !password || !telefono || !direccion) {
+      return res.status(400).json({ 
+        error: "Todos los campos son obligatorios",
+        campos: ["name", "email", "password", "telefono", "direccion"]
+      });
     }
     
     if (password.length < 6) {
       return res.status(400).json({ error: "La contraseña debe tener al menos 6 caracteres" });
     }
 
-    const exists = await User.findOne({ email });
+    // Validar teléfono
+    if (!validarTelefono(telefono)) {
+      return res.status(400).json({ error: "El teléfono debe tener un formato válido (7-15 dígitos)" });
+    }
+
+    // Validar dirección
+    const validacionDireccion = validarDireccion(direccion);
+    if (!validacionDireccion.valido) {
+      return res.status(400).json({ error: validacionDireccion.mensaje });
+    }
+
+    const exists = await User.findOne({ email: email.toLowerCase() });
     if (exists) return res.status(400).json({ error: "El correo ya está registrado" });
 
     const hashed = await bcrypt.hash(password, 10);
-    await new User({ name, email, password: hashed, role }).save();
+    const nuevoUsuario = new User({ 
+      name: name.trim(), 
+      email: email.trim().toLowerCase(), 
+      password: hashed, 
+      telefono: telefono.trim(),
+      direccion: {
+        calle: direccion.calle.trim(),
+        ciudad: direccion.ciudad.trim(),
+        estado: direccion.estado.trim(),
+        pais: direccion.pais ? direccion.pais.trim() : 'Colombia'
+      },
+      role 
+    });
 
-    res.status(201).json({ message: "Usuario registrado con éxito" });
+    await nuevoUsuario.save();
+
+    res.status(201).json({ 
+      message: "Usuario registrado con éxito",
+      usuario: {
+        id: nuevoUsuario._id,
+        name: nuevoUsuario.name,
+        email: nuevoUsuario.email,
+        telefono: nuevoUsuario.telefono,
+        direccion: nuevoUsuario.direccion,
+        role: nuevoUsuario.role
+      }
+    });
   } catch (error) {
     console.error("Error en registro:", error);
-    res.status(500).json({ error: "Error en el servidor" });
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(e => e.message);
+      res.status(400).json({ error: "Error de validación", detalles: errors });
+    } else if (error.code === 11000) {
+      res.status(400).json({ error: "El email ya está registrado" });
+    } else {
+      res.status(500).json({ error: "Error en el servidor" });
+    }
   }
 });
 
@@ -247,7 +337,7 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Email y contraseña son obligatorios" });
     }
 
-    const u = await User.findOne({ email });
+    const u = await User.findOne({ email: email.toLowerCase() });
     if (!u) return res.status(400).json({ error: "Usuario no encontrado" });
 
     const ok = await bcrypt.compare(password, u.password);
@@ -256,7 +346,14 @@ router.post("/login", async (req, res) => {
     const token = jwt.sign({ id: u._id, role: u.role }, JWT_SECRET, { expiresIn: "1d" });
 
     res.json({
-      user: { id: u._id, name: u.name, email: u.email, role: u.role },
+      user: { 
+        id: u._id, 
+        name: u.name, 
+        email: u.email, 
+        telefono: u.telefono,
+        direccion: u.direccion,
+        role: u.role 
+      },
       token,
       redirectTo: u.role === "admin" ? "/admin" : "/home",
     });
@@ -276,8 +373,62 @@ router.get("/auth/me", verifyToken, async (req, res) => {
   }
 });
 
+// NUEVA RUTA PARA ACTUALIZAR PERFIL DE USUARIO
+router.put("/usuarios/perfil", verifyToken, async (req, res) => {
+  try {
+    const { name, telefono, direccion } = req.body;
+    const usuario = await User.findById(req.user.id);
+    
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    // Validar campos si se proporcionan
+    if (telefono && !validarTelefono(telefono)) {
+      return res.status(400).json({ error: "El teléfono debe tener un formato válido" });
+    }
+
+    if (direccion) {
+      const validacionDireccion = validarDireccion(direccion);
+      if (!validacionDireccion.valido) {
+        return res.status(400).json({ error: validacionDireccion.mensaje });
+      }
+    }
+
+    // Actualizar campos
+    if (name && name.trim()) usuario.name = name.trim();
+    if (telefono) usuario.telefono = telefono.trim();
+    if (direccion) {
+      usuario.direccion = {
+        calle: direccion.calle.trim(),
+        ciudad: direccion.ciudad.trim(),
+        estado: direccion.estado.trim(),
+        pais: direccion.pais ? direccion.pais.trim() : usuario.direccion.pais
+      };
+    }
+
+    await usuario.save();
+
+    res.json({
+      message: "Perfil actualizado exitosamente",
+      usuario: {
+        id: usuario._id,
+        name: usuario.name,
+        email: usuario.email,
+        telefono: usuario.telefono,
+        direccion: usuario.direccion,
+        role: usuario.role
+      }
+    });
+
+  } catch (error) {
+    console.error("Error actualizando perfil:", error);
+    res.status(500).json({ error: "Error al actualizar perfil" });
+  }
+});
+
 /* ======================
-   Usuarios & Mascotas
+   USUARIOS & MASCOTAS ACTUALIZADOS
    ====================== */
 router.get("/usuarios", verifyToken, isAdmin, async (req, res) => {
   try {
@@ -286,7 +437,11 @@ router.get("/usuarios", verifyToken, isAdmin, async (req, res) => {
     const usuariosConMascotas = await Promise.all(
       usuarios.map(async (u) => {
         const totalMascotas = await Mascota.countDocuments({ usuario: u._id });
-        return { ...u.toObject(), totalMascotas };
+        return { 
+          ...u.toObject(), 
+          totalMascotas,
+          direccionCompleta: `${u.direccion.calle}, ${u.direccion.ciudad}, ${u.direccion.estado}`
+        };
       })
     );
 
@@ -299,7 +454,7 @@ router.get("/usuarios", verifyToken, isAdmin, async (req, res) => {
 
 router.get("/usuarios/:id/mascotas", verifyToken, async (req, res) => {
   try {
-    const usuario = await User.findById(req.params.id).select("name email");
+    const usuario = await User.findById(req.params.id).select("-password");
     if (!usuario) return res.status(404).json({ error: "Usuario no encontrado" });
 
     if (req.user.role !== "admin" && req.user.id !== req.params.id) {
@@ -378,7 +533,7 @@ router.post("/mascotas", verifyToken, upload.single("imagen"), async (req, res) 
 router.get("/mascotas", verifyToken, async (req, res) => {
   try {
     console.log('📋 Obteniendo mascotas para usuario:', req.user.id);
-    const mascotas = await Mascota.find({ usuario: req.user.id }).populate("usuario", "name email");
+    const mascotas = await Mascota.find({ usuario: req.user.id }).populate("usuario", "name email telefono");
     console.log('📋 Mascotas encontradas:', mascotas.length);
 
     const mascotasConImagen = mascotas.map((m) => ({
@@ -451,7 +606,7 @@ router.put("/mascotas/:id", verifyToken, upload.single("imagen"), async (req, re
 
 router.get("/mascotas/:id", verifyToken, async (req, res) => {
   try {
-    const mascota = await Mascota.findById(req.params.id).populate("usuario", "name email");
+    const mascota = await Mascota.findById(req.params.id).populate("usuario", "name email telefono");
     
     if (!mascota) {
       return res.status(404).json({ error: "Mascota no encontrada" });
@@ -581,7 +736,7 @@ router.delete("/mascotas/:id", verifyToken, async (req, res) => {
 });
 
 /* ======================
-   🆕 RUTAS DE CITAS CORREGIDAS
+   RUTAS DE CITAS
    ====================== */
 
 // Crear nueva cita
@@ -621,7 +776,7 @@ router.post("/citas", verifyToken, async (req, res) => {
       });
     }
 
-    // 🔧 VERIFICAR DISPONIBILIDAD CORREGIDO
+    // Verificar disponibilidad
     const fechaNormalizada = normalizarFecha(fecha);
     const citaExistente = await Cita.findOne({ 
       fecha: fechaNormalizada, 
@@ -651,7 +806,7 @@ router.post("/citas", verifyToken, async (req, res) => {
     // Poblar los datos para la respuesta
     await nuevaCita.populate([
       { path: 'mascota', select: 'nombre especie raza' },
-      { path: 'usuario', select: 'name email' }
+      { path: 'usuario', select: 'name email telefono' }
     ]);
 
     res.status(201).json({ 
@@ -686,7 +841,7 @@ router.get("/citas", verifyToken, async (req, res) => {
 
     const citas = await Cita.find(query)
       .populate('mascota', 'nombre especie raza imagen')
-      .populate('usuario', 'name email')
+      .populate('usuario', 'name email telefono')
       .sort({ fecha: 1, hora: 1 });
 
     console.log('📋 Citas encontradas:', citas.length);
@@ -697,7 +852,7 @@ router.get("/citas", verifyToken, async (req, res) => {
   }
 });
 
-// 🔧 OBTENER HORARIOS DISPONIBLES CORREGIDO
+// Obtener horarios disponibles
 router.get("/citas/horarios-disponibles/:fecha", verifyToken, async (req, res) => {
   try {
     const { fecha } = req.params;
@@ -709,7 +864,7 @@ router.get("/citas/horarios-disponibles/:fecha", verifyToken, async (req, res) =
       });
     }
 
-    // 🔧 BUSCAR CITAS EXISTENTES CORREGIDO
+    // Buscar citas existentes
     const fechaNormalizada = normalizarFecha(fecha);
     const citasExistentes = await Cita.find({ fecha: fechaNormalizada }).select('hora');
     const horasOcupadas = citasExistentes.map(cita => cita.hora);
@@ -798,7 +953,7 @@ router.put("/citas/:id/estado", verifyToken, isAdmin, async (req, res) => {
 
     await cita.populate([
       { path: 'mascota', select: 'nombre especie raza' },
-      { path: 'usuario', select: 'name email' }
+      { path: 'usuario', select: 'name email telefono' }
     ]);
 
     console.log('📝 Estado de cita actualizado:', req.params.id, 'a', estado);
@@ -934,7 +1089,7 @@ router.post("/productos", verifyToken, upload.single("imagen"), async (req, res)
 // Listar productos sin necesidad de login
 router.get("/productos", async (req, res) => {
   try {
-    const productos = await Producto.find().populate("usuario", "name email");
+    const productos = await Producto.find().populate("usuario", "name email telefono");
 
     const productosConImagen = productos.map((p) => ({
       ...p.toObject(),
@@ -954,7 +1109,7 @@ router.get("/productos", async (req, res) => {
 
 router.get("/productos/:id", verifyToken, async (req, res) => {
   try {
-    const producto = await Producto.findById(req.params.id).populate("usuario", "name email");
+    const producto = await Producto.findById(req.params.id).populate("usuario", "name email telefono");
     if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
     
     const productoConImagen = {
@@ -1016,7 +1171,7 @@ router.get("/admin/citas", verifyToken, isAdmin, async (req, res) => {
 
     const citas = await Cita.find(query)
       .populate('mascota', 'nombre especie raza imagen')
-      .populate('usuario', 'name email')
+      .populate('usuario', 'name email telefono')
       .sort({ fecha: 1, hora: 1 });
 
     res.json(citas);
@@ -1031,7 +1186,7 @@ router.get("/citas/:id", verifyToken, async (req, res) => {
   try {
     const cita = await Cita.findById(req.params.id)
       .populate('mascota', 'nombre especie raza imagen usuario')
-      .populate('usuario', 'name email');
+      .populate('usuario', 'name email telefono');
 
     if (!cita) {
       return res.status(404).json({ error: "Cita no encontrada" });
@@ -1110,7 +1265,7 @@ router.put("/citas/:id", verifyToken, async (req, res) => {
     
     await cita.populate([
       { path: 'mascota', select: 'nombre especie raza' },
-      { path: 'usuario', select: 'name email' }
+      { path: 'usuario', select: 'name email telefono' }
     ]);
 
     res.json({ 
@@ -1221,6 +1376,9 @@ app.listen(PORT, () => {
   console.log(`🔗 API disponible en: http://localhost:${PORT}/api`);
   console.log("🩺 Endpoints principales:");
   console.log("   • Salud: GET /api/health");
+  console.log("   • Registro: POST /api/register");
+  console.log("   • Login: POST /api/login");
+  console.log("   • Actualizar Perfil: PUT /api/usuarios/perfil");
   console.log("   • Mascotas: GET/POST /api/mascotas");
   console.log("   • Citas: GET/POST /api/citas");
   console.log("   • Horarios: GET /api/citas/horarios-disponibles/:fecha");
