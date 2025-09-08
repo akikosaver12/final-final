@@ -3,26 +3,46 @@ import { Link } from 'react-router-dom';
 import { useCart } from '../contexts/CartContext';
 
 const CartPage: React.FC = () => {
+  // Usar las funciones del contexto con persistencia
   const { state: cartState, dispatch } = useCart();
 
-  // Asegura que el id sea string para cumplir con CartAction
-  const updateQuantity = (id: string | number, quantity: number) => {
-    const stringId = String(id);
-    if (quantity <= 0) {
-      removeItem(stringId);
-      return;
-    }
-    dispatch({ type: 'UPDATE_QUANTITY', payload: { id: stringId, quantity } });
+  // Helper functions to dispatch cart actions
+  const updateQuantity = (id: string, quantity: number) => {
+    dispatch({ type: 'UPDATE_QUANTITY', payload: { id, quantity } });
   };
 
-  const removeItem = (id: string | number) => {
-    const stringId = String(id);
-    dispatch({ type: 'REMOVE_FROM_CART', payload: stringId });
+  const removeFromCart = (id: string) => {
+    dispatch({ type: 'REMOVE_FROM_CART', payload: id });
+  };
+
+  const clearCartAction = () => {
+    dispatch({ type: 'CLEAR_CART' });
+  };
+
+  // Formateador para pesos colombianos
+  const formatCOP = (value: number) =>
+    new Intl.NumberFormat("es-CO", {
+      style: "currency",
+      currency: "COP",
+      minimumFractionDigits: 0,
+    }).format(value);
+
+  // Mapear categorías a español
+  const getCategoryLabel = (categoria: string) => {
+    const categoryMap: Record<string, string> = {
+      'alimento': 'Alimento',
+      'juguetes': 'Juguetes',
+      'medicamentos': 'Medicamentos',
+      'accesorios': 'Accesorios',
+      'higiene': 'Higiene',
+      'otros': 'Otros'
+    };
+    return categoryMap[categoria] || categoria;
   };
 
   const clearCart = () => {
     if (window.confirm('¿Estás seguro de que quieres vaciar el carrito?')) {
-      dispatch({ type: 'CLEAR_CART' });
+      clearCartAction();
     }
   };
 
@@ -145,23 +165,22 @@ const CartPage: React.FC = () => {
                         {/* DETALLES */}
                         <div className="flex flex-wrap gap-3 mb-4">
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
-                            {item.category}
+                            {getCategoryLabel(item.category)}
                           </span>
                           <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-600">
                             ✓ Disponible
                           </span>
+                          {item.stock && item.stock <= 5 && (
+                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-600">
+                              Solo {item.stock} disponibles
+                            </span>
+                          )}
                         </div>
                         
-                        {/* PRECIO */}
+                        {/* PRECIO - Solo precio real */}
                         <div className="flex items-baseline space-x-2 mb-4">
                           <span className="text-2xl font-bold text-gray-900">
-                            ${item.price.toLocaleString()}
-                          </span>
-                          <span className="text-sm text-gray-500 line-through">
-                            ${(item.price * 1.2).toLocaleString()}
-                          </span>
-                          <span className="text-sm font-medium text-red-500">
-                            -20%
+                            {formatCOP(item.price)}
                           </span>
                         </div>
                       </div>
@@ -182,7 +201,8 @@ const CartPage: React.FC = () => {
                           </span>
                           <button
                             onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                            className="w-10 h-10 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-all duration-200 font-bold"
+                            disabled={!!item.stock && item.quantity >= item.stock}
+                            className="w-10 h-10 flex items-center justify-center text-gray-600 hover:text-gray-900 hover:bg-white rounded-lg transition-all duration-200 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             +
                           </button>
@@ -192,13 +212,13 @@ const CartPage: React.FC = () => {
                         <div className="text-right">
                           <p className="text-sm text-gray-500">Subtotal</p>
                           <p className="text-xl font-bold text-gray-900">
-                            ${(item.price * item.quantity).toLocaleString()}
+                            {formatCOP(item.price * item.quantity)}
                           </p>
                         </div>
                         
                         {/* BOTÓN ELIMINAR */}
                         <button
-                          onClick={() => removeItem(item.id)}
+                          onClick={() => removeFromCart(item.id)}
                           className="flex items-center space-x-2 text-red-500 hover:text-red-700 font-medium transition-colors duration-200"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -233,7 +253,7 @@ const CartPage: React.FC = () => {
                 <div className="flex justify-between items-center py-2">
                   <span className="text-gray-600">Productos ({cartState.itemCount})</span>
                   <span className="font-semibold text-gray-900">
-                    ${cartState.total.toLocaleString()}
+                    {formatCOP(cartState.total)}
                   </span>
                 </div>
                 
@@ -241,14 +261,14 @@ const CartPage: React.FC = () => {
                   <span className="text-gray-600">Envío</span>
                   <div className="text-right">
                     <span className="font-semibold text-green-600">GRATIS</span>
-                    <p className="text-xs text-gray-500">En compras +$100</p>
+                    <p className="text-xs text-gray-500">En compras +{formatCOP(100000)}</p>
                   </div>
                 </div>
                 
                 <div className="flex justify-between items-center py-2">
-                  <span className="text-gray-600">Descuentos</span>
-                  <span className="font-semibold text-green-600">
-                    -${(cartState.total * 0.1).toLocaleString()}
+                  <span className="text-gray-600">IVA incluido</span>
+                  <span className="font-semibold text-gray-600">
+                    {formatCOP(cartState.total * 0.19)}
                   </span>
                 </div>
                 
@@ -257,7 +277,7 @@ const CartPage: React.FC = () => {
                 <div className="flex justify-between items-center py-2">
                   <span className="text-xl font-bold text-gray-900">Total</span>
                   <span className="text-2xl font-bold text-gray-900">
-                    ${(cartState.total * 0.9).toLocaleString()}
+                    {formatCOP(cartState.total)}
                   </span>
                 </div>
               </div>

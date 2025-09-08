@@ -106,6 +106,7 @@ const mascotaSchema = new mongoose.Schema(
 );
 const Mascota = mongoose.model("Mascota", mascotaSchema);
 
+// ESQUEMA DE PRODUCTO ACTUALIZADO CON NUEVOS CAMPOS
 const productoSchema = new mongoose.Schema(
   {
     nombre: { type: String, required: true, trim: true },
@@ -113,9 +114,97 @@ const productoSchema = new mongoose.Schema(
     precio: { type: Number, required: true, min: 0 },
     imagen: String,
     usuario: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    // NUEVOS CAMPOS AGREGADOS
+    descuento: {
+      tiene: { type: Boolean, default: false },
+      porcentaje: { 
+        type: Number, 
+        default: 0, 
+        min: 0, 
+        max: 100,
+        validate: {
+          validator: function(v) {
+            // Solo validar si tiene descuento
+            if (this.descuento.tiene && (v <= 0 || v > 100)) {
+              return false;
+            }
+            return true;
+          },
+          message: 'El porcentaje de descuento debe estar entre 1 y 100'
+        }
+      },
+      fechaInicio: { type: Date },
+      fechaFin: { type: Date }
+    },
+    garantia: {
+      tiene: { type: Boolean, default: false },
+      meses: { 
+        type: Number, 
+        default: 0, 
+        min: 0,
+        validate: {
+          validator: function(v) {
+            // Solo validar si tiene garantía
+            if (this.garantia.tiene && v <= 0) {
+              return false;
+            }
+            return true;
+          },
+          message: 'Los meses de garantía deben ser mayor a 0'
+        }
+      },
+      descripcion: { type: String, default: "", trim: true }
+    },
+    envioGratis: { 
+      type: Boolean, 
+      default: false 
+    },
+    // Campos adicionales opcionales
+    stock: { type: Number, default: 0, min: 0 },
+    categoria: { 
+      type: String, 
+      enum: ["alimento", "juguetes", "medicamentos", "accesorios", "higiene", "otros"],
+      default: "otros"
+    },
+    activo: { type: Boolean, default: true }
   },
   { timestamps: true }
 );
+
+// Método para calcular precio con descuento
+productoSchema.methods.getPrecioConDescuento = function() {
+  if (!this.descuento.tiene || this.descuento.porcentaje <= 0) {
+    return this.precio;
+  }
+  
+  // Verificar si el descuento está vigente
+  const ahora = new Date();
+  if (this.descuento.fechaInicio && ahora < this.descuento.fechaInicio) {
+    return this.precio;
+  }
+  if (this.descuento.fechaFin && ahora > this.descuento.fechaFin) {
+    return this.precio;
+  }
+  
+  const descuentoDecimal = this.descuento.porcentaje / 100;
+  return this.precio * (1 - descuentoDecimal);
+};
+
+// Método para verificar si el descuento está vigente
+productoSchema.methods.isDescuentoVigente = function() {
+  if (!this.descuento.tiene) return false;
+  
+  const ahora = new Date();
+  if (this.descuento.fechaInicio && ahora < this.descuento.fechaInicio) {
+    return false;
+  }
+  if (this.descuento.fechaFin && ahora > this.descuento.fechaFin) {
+    return false;
+  }
+  
+  return true;
+};
+
 const Producto = mongoose.model("Producto", productoSchema);
 
 const citaSchema = new mongoose.Schema(
@@ -250,6 +339,53 @@ const validarDireccion = (direccion) => {
   
   if (estado.trim().length < 2) {
     return { valido: false, mensaje: "El estado debe tener al menos 2 caracteres" };
+  }
+  
+  return { valido: true };
+};
+
+// NUEVA FUNCIÓN PARA VALIDAR DATOS DE PRODUCTO
+const validarProducto = (datos) => {
+  const { nombre, descripcion, precio, descuento, garantia, categoria, stock } = datos;
+  
+  // Validaciones básicas
+  if (!nombre || !descripcion || precio === undefined) {
+    return { valido: false, mensaje: "Nombre, descripción y precio son obligatorios" };
+  }
+  
+  if (precio < 0) {
+    return { valido: false, mensaje: "El precio no puede ser negativo" };
+  }
+  
+  // Validar descuento
+  if (descuento && descuento.tiene) {
+    if (!descuento.porcentaje || descuento.porcentaje <= 0 || descuento.porcentaje > 100) {
+      return { valido: false, mensaje: "El porcentaje de descuento debe estar entre 1 y 100" };
+    }
+    
+    if (descuento.fechaInicio && descuento.fechaFin) {
+      if (new Date(descuento.fechaInicio) >= new Date(descuento.fechaFin)) {
+        return { valido: false, mensaje: "La fecha de inicio del descuento debe ser anterior a la fecha de fin" };
+      }
+    }
+  }
+  
+  // Validar garantía
+  if (garantia && garantia.tiene) {
+    if (!garantia.meses || garantia.meses <= 0) {
+      return { valido: false, mensaje: "Los meses de garantía deben ser mayor a 0" };
+    }
+  }
+  
+  // Validar stock
+  if (stock !== undefined && stock < 0) {
+    return { valido: false, mensaje: "El stock no puede ser negativo" };
+  }
+  
+  // Validar categoría
+  const categoriasValidas = ["alimento", "juguetes", "medicamentos", "accesorios", "higiene", "otros"];
+  if (categoria && !categoriasValidas.includes(categoria)) {
+    return { valido: false, mensaje: "Categoría no válida" };
   }
   
   return { valido: true };
@@ -1026,13 +1162,21 @@ router.get("/admin/dashboard", verifyToken, isAdmin, async (req, res) => {
       }
     });
 
+    // Estadísticas de productos
+    const productosConDescuento = await Producto.countDocuments({ "descuento.tiene": true });
+    const productosConGarantia = await Producto.countDocuments({ "garantia.tiene": true });
+    const productosEnvioGratis = await Producto.countDocuments({ envioGratis: true });
+
     res.json({ 
       totalUsuarios, 
       totalProductos, 
       totalMascotas, 
       totalCitas,
       citasPorEstado,
-      citasHoy
+      citasHoy,
+      productosConDescuento,
+      productosConGarantia,
+      productosEnvioGratis
     });
   } catch (error) {
     console.error("Error en dashboard:", error);
@@ -1041,32 +1185,60 @@ router.get("/admin/dashboard", verifyToken, isAdmin, async (req, res) => {
 });
 
 /* ======================
-   Productos
+   PRODUCTOS ACTUALIZADOS CON NUEVOS CAMPOS
    ====================== */
 router.post("/productos", verifyToken, upload.single("imagen"), async (req, res) => {
   try {
-    const { nombre, descripcion, precio } = req.body;
+    const { 
+      nombre, 
+      descripcion, 
+      precio, 
+      categoria,
+      stock,
+      // Campos de descuento
+      tieneDescuento,
+      porcentajeDescuento,
+      fechaInicioDescuento,
+      fechaFinDescuento,
+      // Campos de garantía
+      tieneGarantia,
+      mesesGarantia,
+      descripcionGarantia,
+      // Envío gratis
+      envioGratis
+    } = req.body;
 
-    // Validaciones obligatorias
-    if (!nombre || !descripcion || !precio) {
-      return res.status(400).json({ 
-        error: "Los campos nombre, descripción y precio son obligatorios" 
-      });
-    }
+    console.log('📦 Datos recibidos para nuevo producto:', req.body);
 
-    if (!nombre.trim() || !descripcion.trim()) {
-      return res.status(400).json({ error: "Nombre y descripción no pueden estar vacíos" });
-    }
+    // Preparar objeto de producto
+    const datosProducto = {
+      nombre: nombre?.trim(),
+      descripcion: descripcion?.trim(),
+      precio: parseFloat(precio),
+      categoria: categoria || 'otros',
+      stock: parseInt(stock) || 0,
+      envioGratis: envioGratis === 'true' || envioGratis === true,
+      descuento: {
+        tiene: tieneDescuento === 'true' || tieneDescuento === true,
+        porcentaje: parseFloat(porcentajeDescuento) || 0,
+        fechaInicio: fechaInicioDescuento ? new Date(fechaInicioDescuento) : null,
+        fechaFin: fechaFinDescuento ? new Date(fechaFinDescuento) : null
+      },
+      garantia: {
+        tiene: tieneGarantia === 'true' || tieneGarantia === true,
+        meses: parseInt(mesesGarantia) || 0,
+        descripcion: descripcionGarantia?.trim() || ""
+      }
+    };
 
-    const precioNum = parseFloat(precio);
-    if (isNaN(precioNum) || precioNum < 0) {
-      return res.status(400).json({ error: "El precio debe ser un número mayor o igual a 0" });
+    // Validar datos del producto
+    const validacion = validarProducto(datosProducto);
+    if (!validacion.valido) {
+      return res.status(400).json({ error: validacion.mensaje });
     }
 
     const nuevoProducto = new Producto({
-      nombre: nombre.trim(),
-      descripcion: descripcion.trim(),
-      precio: precioNum,
+      ...datosProducto,
       imagen: req.file
         ? `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`
         : "",
@@ -1074,9 +1246,14 @@ router.post("/productos", verifyToken, upload.single("imagen"), async (req, res)
     });
 
     await nuevoProducto.save();
-    res.status(201).json({ msg: "Producto creado", producto: nuevoProducto });
+    console.log('✅ Producto creado exitosamente:', nuevoProducto.nombre);
+    
+    res.status(201).json({ 
+      msg: "Producto creado exitosamente", 
+      producto: nuevoProducto 
+    });
   } catch (err) {
-    console.error("Error creando producto:", err);
+    console.error("❌ Error creando producto:", err);
     if (err.name === 'ValidationError') {
       const errors = Object.values(err.errors).map(e => e.message);
       res.status(400).json({ msg: "Error de validación", errors });
@@ -1086,45 +1263,176 @@ router.post("/productos", verifyToken, upload.single("imagen"), async (req, res)
   }
 });
 
-// Listar productos sin necesidad de login
+// Listar productos con información completa
 router.get("/productos", async (req, res) => {
   try {
-    const productos = await Producto.find().populate("usuario", "name email telefono");
+    const { categoria, descuento, garantia, envioGratis } = req.query;
+    
+    let filtros = { activo: true };
+    
+    // Aplicar filtros
+    if (categoria && categoria !== 'todos') {
+      filtros.categoria = categoria;
+    }
+    
+    if (descuento === 'true') {
+      filtros['descuento.tiene'] = true;
+    }
+    
+    if (garantia === 'true') {
+      filtros['garantia.tiene'] = true;
+    }
+    
+    if (envioGratis === 'true') {
+      filtros.envioGratis = true;
+    }
 
-    const productosConImagen = productos.map((p) => ({
-      ...p.toObject(),
-      imagen: p.imagen
+    const productos = await Producto.find(filtros).populate("usuario", "name email telefono");
+
+    const productosConDatos = productos.map((p) => {
+      const producto = p.toObject();
+      
+      // Agregar información calculada
+      producto.precioConDescuento = p.getPrecioConDescuento();
+      producto.descuentoVigente = p.isDescuentoVigente();
+      producto.ahorroDescuento = producto.precio - producto.precioConDescuento;
+      
+      // Formatear imagen
+      producto.imagen = p.imagen
         ? p.imagen.startsWith("http")
           ? p.imagen
           : `${req.protocol}://${req.get("host")}${p.imagen}`
-        : null,
-    }));
+        : null;
+      
+      return producto;
+    });
 
-    res.json(productosConImagen);
+    res.json(productosConDatos);
   } catch (err) {
-    console.error("Error listando productos:", err);
+    console.error("❌ Error listando productos:", err);
     res.status(500).json({ msg: "Error al listar productos", error: err.message });
   }
 });
 
-router.get("/productos/:id", verifyToken, async (req, res) => {
+router.get("/productos/:id", async (req, res) => {
   try {
     const producto = await Producto.findById(req.params.id).populate("usuario", "name email telefono");
     if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
     
-    const productoConImagen = {
-      ...producto.toObject(),
-      imagen: producto.imagen
-        ? producto.imagen.startsWith("http")
-          ? producto.imagen
-          : `${req.protocol}://${req.get("host")}${producto.imagen}`
-        : null,
-    };
+    const productoObj = producto.toObject();
     
-    res.json(productoConImagen);
+    // Agregar información calculada
+    productoObj.precioConDescuento = producto.getPrecioConDescuento();
+    productoObj.descuentoVigente = producto.isDescuentoVigente();
+    productoObj.ahorroDescuento = productoObj.precio - productoObj.precioConDescuento;
+    
+    // Formatear imagen
+    productoObj.imagen = producto.imagen
+      ? producto.imagen.startsWith("http")
+        ? producto.imagen
+        : `${req.protocol}://${req.get("host")}${producto.imagen}`
+      : null;
+    
+    res.json(productoObj);
   } catch (err) {
-    console.error("Error obteniendo producto:", err);
+    console.error("❌ Error obteniendo producto:", err);
     res.status(500).json({ msg: "Error al obtener producto", error: err.message });
+  }
+});
+
+// Actualizar producto
+router.put("/productos/:id", verifyToken, upload.single("imagen"), async (req, res) => {
+  try {
+    const producto = await Producto.findById(req.params.id);
+    if (!producto) return res.status(404).json({ error: "Producto no encontrado" });
+
+    if (req.user.role !== "admin" && producto.usuario.toString() !== req.user.id) {
+      return res.status(403).json({ error: "No autorizado para editar este producto" });
+    }
+
+    const { 
+      nombre, 
+      descripcion, 
+      precio, 
+      categoria,
+      stock,
+      tieneDescuento,
+      porcentajeDescuento,
+      fechaInicioDescuento,
+      fechaFinDescuento,
+      tieneGarantia,
+      mesesGarantia,
+      descripcionGarantia,
+      envioGratis,
+      activo
+    } = req.body;
+
+    // Actualizar campos básicos
+    if (nombre && nombre.trim()) producto.nombre = nombre.trim();
+    if (descripcion && descripcion.trim()) producto.descripcion = descripcion.trim();
+    if (precio !== undefined) producto.precio = parseFloat(precio);
+    if (categoria) producto.categoria = categoria;
+    if (stock !== undefined) producto.stock = parseInt(stock);
+    if (envioGratis !== undefined) producto.envioGratis = envioGratis === 'true' || envioGratis === true;
+    if (activo !== undefined) producto.activo = activo === 'true' || activo === true;
+
+    // Actualizar descuento
+    if (tieneDescuento !== undefined) {
+      producto.descuento.tiene = tieneDescuento === 'true' || tieneDescuento === true;
+      if (producto.descuento.tiene) {
+        if (porcentajeDescuento !== undefined) producto.descuento.porcentaje = parseFloat(porcentajeDescuento);
+        if (fechaInicioDescuento) producto.descuento.fechaInicio = new Date(fechaInicioDescuento);
+        if (fechaFinDescuento) producto.descuento.fechaFin = new Date(fechaFinDescuento);
+      } else {
+        producto.descuento.porcentaje = 0;
+        producto.descuento.fechaInicio = null;
+        producto.descuento.fechaFin = null;
+      }
+    }
+
+    // Actualizar garantía
+    if (tieneGarantia !== undefined) {
+      producto.garantia.tiene = tieneGarantia === 'true' || tieneGarantia === true;
+      if (producto.garantia.tiene) {
+        if (mesesGarantia !== undefined) producto.garantia.meses = parseInt(mesesGarantia);
+        if (descripcionGarantia !== undefined) producto.garantia.descripcion = descripcionGarantia.trim();
+      } else {
+        producto.garantia.meses = 0;
+        producto.garantia.descripcion = "";
+      }
+    }
+
+    // Actualizar imagen si se proporciona
+    if (req.file) {
+      producto.imagen = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+    }
+
+    // Validar antes de guardar
+    const datosValidacion = {
+      nombre: producto.nombre,
+      descripcion: producto.descripcion,
+      precio: producto.precio,
+      descuento: producto.descuento,
+      garantia: producto.garantia,
+      categoria: producto.categoria,
+      stock: producto.stock
+    };
+
+    const validacion = validarProducto(datosValidacion);
+    if (!validacion.valido) {
+      return res.status(400).json({ error: validacion.mensaje });
+    }
+
+    await producto.save();
+    res.json({ msg: "Producto actualizado correctamente", producto });
+  } catch (err) {
+    console.error("❌ Error actualizando producto:", err);
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => e.message);
+      res.status(400).json({ msg: "Error de validación", errors });
+    } else {
+      res.status(500).json({ msg: "Error al actualizar producto", error: err.message });
+    }
   }
 });
 
@@ -1138,10 +1446,30 @@ router.delete("/productos/:id", verifyToken, async (req, res) => {
     }
 
     await producto.deleteOne();
-    res.json({ msg: "Producto eliminado" });
+    console.log('🗑️ Producto eliminado:', producto.nombre);
+    res.json({ msg: "Producto eliminado exitosamente" });
   } catch (err) {
-    console.error("Error eliminando producto:", err);
+    console.error("❌ Error eliminando producto:", err);
     res.status(500).json({ msg: "Error al eliminar producto", error: err.message });
+  }
+});
+
+// Obtener categorías disponibles
+router.get("/productos/categorias/disponibles", async (req, res) => {
+  try {
+    const categorias = [
+      { value: 'alimento', label: 'Alimento' },
+      { value: 'juguetes', label: 'Juguetes' },
+      { value: 'medicamentos', label: 'Medicamentos' },
+      { value: 'accesorios', label: 'Accesorios' },
+      { value: 'higiene', label: 'Higiene' },
+      { value: 'otros', label: 'Otros' }
+    ];
+    
+    res.json(categorias);
+  } catch (err) {
+    console.error("❌ Error obteniendo categorías:", err);
+    res.status(500).json({ error: "Error al obtener categorías" });
   }
 });
 
@@ -1383,6 +1711,7 @@ app.listen(PORT, () => {
   console.log("   • Citas: GET/POST /api/citas");
   console.log("   • Horarios: GET /api/citas/horarios-disponibles/:fecha");
   console.log("   • Admin Dashboard: GET /api/admin/dashboard");
-  console.log("   • Productos: GET /api/productos");
+  console.log("   • Productos: GET/POST/PUT/DELETE /api/productos");
+  console.log("   • Categorías: GET /api/productos/categorias/disponibles");
   console.log("=======================================🚀");
 });

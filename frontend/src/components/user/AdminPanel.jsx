@@ -23,6 +23,17 @@ const AdminPanel = () => {
     precio: "",
     descripcion: "",
     imagen: null,
+    // NUEVOS CAMPOS AGREGADOS
+    categoria: "otros",
+    stock: "",
+    tieneDescuento: false,
+    porcentajeDescuento: "",
+    fechaInicioDescuento: "",
+    fechaFinDescuento: "",
+    tieneGarantia: false,
+    mesesGarantia: "",
+    descripcionGarantia: "",
+    envioGratis: false
   });
   const [previewImage, setPreviewImage] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
@@ -30,6 +41,7 @@ const AdminPanel = () => {
   const [mascotasUsuario, setMascotasUsuario] = useState([]);
   const [productos, setProductos] = useState([]);
   const [citas, setCitas] = useState([]);
+  const [categorias, setCategorias] = useState([]);
   const [loading, setLoading] = useState(false);
   const [warn, setWarn] = useState("");
   const [serverStatus, setServerStatus] = useState("checking");
@@ -151,12 +163,14 @@ const AdminPanel = () => {
     }
   };
 
-  // --- Handlers formulario ---
+  // --- Handlers formulario actualizados ---
   const handleChange = (e) => {
-    const { name, value, files } = e.target;
+    const { name, value, files, type, checked } = e.target;
     if (files && files[0]) {
       setFormData((s) => ({ ...s, [name]: files[0] }));
       setPreviewImage(URL.createObjectURL(files[0]));
+    } else if (type === 'checkbox') {
+      setFormData((s) => ({ ...s, [name]: checked }));
     } else {
       setFormData((s) => ({ ...s, [name]: value }));
     }
@@ -176,9 +190,36 @@ const AdminPanel = () => {
     setLoading(true);
     try {
       const data = new FormData();
+      
+      // Campos básicos
       data.append("nombre", formData.nombre);
       data.append("precio", formData.precio);
       data.append("descripcion", formData.descripcion);
+      
+      // Nuevos campos
+      data.append("categoria", formData.categoria);
+      data.append("stock", formData.stock || "0");
+      data.append("envioGratis", formData.envioGratis);
+      
+      // Campos de descuento
+      data.append("tieneDescuento", formData.tieneDescuento);
+      if (formData.tieneDescuento) {
+        data.append("porcentajeDescuento", formData.porcentajeDescuento);
+        if (formData.fechaInicioDescuento) {
+          data.append("fechaInicioDescuento", formData.fechaInicioDescuento);
+        }
+        if (formData.fechaFinDescuento) {
+          data.append("fechaFinDescuento", formData.fechaFinDescuento);
+        }
+      }
+      
+      // Campos de garantía
+      data.append("tieneGarantia", formData.tieneGarantia);
+      if (formData.tieneGarantia) {
+        data.append("mesesGarantia", formData.mesesGarantia);
+        data.append("descripcionGarantia", formData.descripcionGarantia);
+      }
+
       if (formData.imagen) {
         data.append("imagen", formData.imagen);
       }
@@ -190,7 +231,24 @@ const AdminPanel = () => {
       });
 
       alert("✅ Producto agregado con éxito");
-      setFormData({ nombre: "", precio: "", descripcion: "", imagen: null });
+      
+      // Reset form
+      setFormData({
+        nombre: "",
+        precio: "",
+        descripcion: "",
+        imagen: null,
+        categoria: "otros",
+        stock: "",
+        tieneDescuento: false,
+        porcentajeDescuento: "",
+        fechaInicioDescuento: "",
+        fechaFinDescuento: "",
+        tieneGarantia: false,
+        mesesGarantia: "",
+        descripcionGarantia: "",
+        envioGratis: false
+      });
       setPreviewImage(null);
       if (fileRef.current) fileRef.current.value = "";
       getProductos();
@@ -249,6 +307,24 @@ const AdminPanel = () => {
     }
   };
 
+  const getCategorias = async () => {
+    try {
+      const data = await fetchJSON(`${BASE_URL}/api/productos/categorias/disponibles`);
+      setCategorias(data);
+    } catch (error) {
+      console.error("Error cargando categorías:", error);
+      // Fallback a categorías predeterminadas
+      setCategorias([
+        { value: 'alimento', label: 'Alimento' },
+        { value: 'juguetes', label: 'Juguetes' },
+        { value: 'medicamentos', label: 'Medicamentos' },
+        { value: 'accesorios', label: 'Accesorios' },
+        { value: 'higiene', label: 'Higiene' },
+        { value: 'otros', label: 'Otros' }
+      ]);
+    }
+  };
+
   const eliminarProducto = async (id) => {
     if (!window.confirm("¿Seguro que deseas eliminar este producto?")) return;
     const isServerOnline = await checkServerHealth();
@@ -291,9 +367,25 @@ const AdminPanel = () => {
     }
   };
 
+  // --- Utility Functions ---
+  const formatearPrecio = (precio) => {
+    return new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(precio);
+  };
+
+  const formatearFecha = (fecha) => {
+    if (!fecha) return "";
+    return new Date(fecha).toLocaleDateString('es-CO');
+  };
+
   // --- Effects ---
   useEffect(() => {
     checkServerHealth();
+    getCategorias();
   }, []);
 
   useEffect(() => {
@@ -374,56 +466,196 @@ const AdminPanel = () => {
           </div>
         )}
 
-        {/* Subir Productos */}
+        {/* Subir Productos - FORMULARIO ACTUALIZADO */}
         {activeTab === "productos" && (
           <form
             onSubmit={handleSubmit}
-            className="bg-white p-8 rounded-xl shadow-md max-w-2xl space-y-6"
+            className="bg-white p-8 rounded-xl shadow-md max-w-4xl space-y-6"
           >
-            <input
-              type="text"
-              name="nombre"
-              placeholder="Nombre del producto"
-              className="w-full border p-3 rounded text-lg"
-              onChange={handleChange}
-              value={formData.nombre}
-              required
-            />
-            <input
-              type="number"
-              name="precio"
-              placeholder="Precio"
-              min="0"
-              step="0.01"
-              className="w-full border p-3 rounded text-lg"
-              onChange={handleChange}
-              value={formData.precio}
-              required
-            />
-            <textarea
-              name="descripcion"
-              placeholder="Descripción"
-              className="w-full border p-3 rounded text-lg"
-              rows="4"
-              onChange={handleChange}
-              value={formData.descripcion}
-              required
-            />
-            <input
-              ref={fileRef}
-              type="file"
-              name="imagen"
-              accept="image/*"
-              className="w-full"
-              onChange={handleChange}
-            />
-            {previewImage && (
-              <img
-                src={previewImage}
-                alt="preview"
-                className="w-48 h-48 object-cover rounded-lg shadow"
-              />
-            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Información básica */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-purple-700">Información Básica</h3>
+                
+                <input
+                  type="text"
+                  name="nombre"
+                  placeholder="Nombre del producto"
+                  className="w-full border p-3 rounded text-lg"
+                  onChange={handleChange}
+                  value={formData.nombre}
+                  required
+                />
+                
+                <textarea
+                  name="descripcion"
+                  placeholder="Descripción"
+                  className="w-full border p-3 rounded text-lg"
+                  rows="3"
+                  onChange={handleChange}
+                  value={formData.descripcion}
+                  required
+                />
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="number"
+                    name="precio"
+                    placeholder="Precio"
+                    min="0"
+                    step="0.01"
+                    className="w-full border p-3 rounded text-lg"
+                    onChange={handleChange}
+                    value={formData.precio}
+                    required
+                  />
+                  <input
+                    type="number"
+                    name="stock"
+                    placeholder="Stock"
+                    min="0"
+                    className="w-full border p-3 rounded text-lg"
+                    onChange={handleChange}
+                    value={formData.stock}
+                  />
+                </div>
+                
+                <select
+                  name="categoria"
+                  className="w-full border p-3 rounded text-lg"
+                  onChange={handleChange}
+                  value={formData.categoria}
+                  required
+                >
+                  {categorias.map((cat) => (
+                    <option key={cat.value} value={cat.value}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
+                
+                <input
+                  ref={fileRef}
+                  type="file"
+                  name="imagen"
+                  accept="image/*"
+                  className="w-full"
+                  onChange={handleChange}
+                />
+                
+                {previewImage && (
+                  <img
+                    src={previewImage}
+                    alt="preview"
+                    className="w-32 h-32 object-cover rounded-lg shadow"
+                  />
+                )}
+              </div>
+              
+              {/* Opciones avanzadas */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-purple-700">Opciones Avanzadas</h3>
+                
+                {/* Envío gratis */}
+                <label className="flex items-center space-x-3 p-3 bg-green-50 rounded-lg cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="envioGratis"
+                    checked={formData.envioGratis}
+                    onChange={handleChange}
+                    className="w-5 h-5 text-green-600"
+                  />
+                  <span className="text-green-800 font-medium">🚚 Envío Gratis</span>
+                </label>
+                
+                {/* Descuento */}
+                <div className="p-4 bg-orange-50 rounded-lg">
+                  <label className="flex items-center space-x-3 mb-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="tieneDescuento"
+                      checked={formData.tieneDescuento}
+                      onChange={handleChange}
+                      className="w-5 h-5 text-orange-600"
+                    />
+                    <span className="text-orange-800 font-medium">🏷️ Tiene Descuento</span>
+                  </label>
+                  
+                  {formData.tieneDescuento && (
+                    <div className="space-y-3">
+                      <input
+                        type="number"
+                        name="porcentajeDescuento"
+                        placeholder="% de descuento"
+                        min="1"
+                        max="100"
+                        className="w-full border p-2 rounded"
+                        onChange={handleChange}
+                        value={formData.porcentajeDescuento}
+                        required={formData.tieneDescuento}
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="date"
+                          name="fechaInicioDescuento"
+                          placeholder="Fecha inicio"
+                          className="w-full border p-2 rounded text-sm"
+                          onChange={handleChange}
+                          value={formData.fechaInicioDescuento}
+                        />
+                        <input
+                          type="date"
+                          name="fechaFinDescuento"
+                          placeholder="Fecha fin"
+                          className="w-full border p-2 rounded text-sm"
+                          onChange={handleChange}
+                          value={formData.fechaFinDescuento}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Garantía */}
+                <div className="p-4 bg-blue-50 rounded-lg">
+                  <label className="flex items-center space-x-3 mb-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      name="tieneGarantia"
+                      checked={formData.tieneGarantia}
+                      onChange={handleChange}
+                      className="w-5 h-5 text-blue-600"
+                    />
+                    <span className="text-blue-800 font-medium">🛡️ Tiene Garantía</span>
+                  </label>
+                  
+                  {formData.tieneGarantia && (
+                    <div className="space-y-3">
+                      <input
+                        type="number"
+                        name="mesesGarantia"
+                        placeholder="Meses de garantía"
+                        min="1"
+                        max="120"
+                        className="w-full border p-2 rounded"
+                        onChange={handleChange}
+                        value={formData.mesesGarantia}
+                        required={formData.tieneGarantia}
+                      />
+                      <textarea
+                        name="descripcionGarantia"
+                        placeholder="Descripción de la garantía"
+                        className="w-full border p-2 rounded text-sm"
+                        rows="2"
+                        onChange={handleChange}
+                        value={formData.descripcionGarantia}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
             <button
               type="submit"
               className="w-full bg-purple-600 text-white py-3 rounded-lg text-lg hover:bg-purple-700 disabled:opacity-50"
@@ -434,7 +666,7 @@ const AdminPanel = () => {
           </form>
         )}
 
-        {/* Ver Productos */}
+        {/* Ver Productos - VISTA ACTUALIZADA */}
         {activeTab === "verProductos" && (
           <div>
             <div className="flex justify-between items-center mb-4">
@@ -469,12 +701,93 @@ const AdminPanel = () => {
                         }}
                       />
                     )}
-                    <h3 className="font-bold text-purple-700 text-xl">
+                    
+                    {/* Header con badges */}
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {p.envioGratis && (
+                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                          🚚 Envío Gratis
+                        </span>
+                      )}
+                      {p.descuentoVigente && (
+                        <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
+                          🏷️ -{p.descuento.porcentaje}%
+                        </span>
+                      )}
+                      {p.garantia?.tiene && (
+                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                          🛡️ Garantía
+                        </span>
+                      )}
+                      <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
+                        {categorias.find(cat => cat.value === p.categoria)?.label || p.categoria}
+                      </span>
+                    </div>
+                    
+                    <h3 className="font-bold text-purple-700 text-xl mb-2">
                       {p.nombre}
                     </h3>
-                    <p className="text-gray-600">💲 {p.precio}</p>
-                    <p className="text-gray-500 mt-2 flex-1">{p.descripcion}</p>
-                    <div className="mt-4 space-y-2">
+                    
+                    {/* Precios */}
+                    <div className="mb-2">
+                      {p.descuentoVigente ? (
+                        <div>
+                          <span className="text-lg font-bold text-green-600">
+                            {formatearPrecio(p.precioConDescuento)}
+                          </span>
+                          <span className="text-sm text-gray-500 line-through ml-2">
+                            {formatearPrecio(p.precio)}
+                          </span>
+                          <div className="text-xs text-green-600">
+                            Ahorras: {formatearPrecio(p.ahorroDescuento)}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-lg font-bold text-gray-700">
+                          {formatearPrecio(p.precio)}
+                        </span>
+                      )}
+                    </div>
+                    
+                    <p className="text-gray-500 text-sm flex-1 mb-3">{p.descripcion}</p>
+                    
+                    {/* Información adicional */}
+                    <div className="space-y-2 text-xs text-gray-600 mb-4">
+                      <div className="flex justify-between">
+                        <span>Stock:</span>
+                        <span className={p.stock <= 0 ? "text-red-600" : "text-green-600"}>
+                          {p.stock || 0} unidades
+                        </span>
+                      </div>
+                      
+                      {p.garantia?.tiene && (
+                        <div className="flex justify-between">
+                          <span>Garantía:</span>
+                          <span>{p.garantia.meses} meses</span>
+                        </div>
+                      )}
+                      
+                      {p.descuento?.tiene && (
+                        <div className="text-xs">
+                          <div className="flex justify-between">
+                            <span>Descuento:</span>
+                            <span>{p.descuento.porcentaje}%</span>
+                          </div>
+                          {p.descuento.fechaInicio && (
+                            <div className="text-gray-500">
+                              Desde: {formatearFecha(p.descuento.fechaInicio)}
+                            </div>
+                          )}
+                          {p.descuento.fechaFin && (
+                            <div className="text-gray-500">
+                              Hasta: {formatearFecha(p.descuento.fechaFin)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="mt-auto space-y-2">
                       <p className="text-xs text-gray-400">ID: {p._id}</p>
                       <button
                         onClick={() => eliminarProducto(p._id)}
