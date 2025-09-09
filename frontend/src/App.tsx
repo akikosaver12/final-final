@@ -16,6 +16,7 @@ import User from './components/user/Login';
 import Registro from './components/user/Register';
 import Home from './components/user/Home';
 import Edit from './components/mascotas/editarinfo'
+import Prefil from './components/user/prefil'
 
 // 🔹 Nueva página para admin
 import AdminPanel from './components/user/AdminPanel';
@@ -57,6 +58,8 @@ function App() {
             <Route path="/about" element={<AboutPage />} />
             <Route path="/mascotas" element={<MascotaPage />} />
             <Route path="/edit/:idMascota" element={<Edit />} />
+            <Route path="/perfil" element={<Prefil />} />
+            
             {/* 👇 Aquí ya no pasamos idMascota manual */}
             <Route path="/mascota/:idMascota" element={<Maxinfo />} />
 
