@@ -1,36 +1,45 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Camera, Upload, X, Check } from "lucide-react";
 
+interface FormState {
+  nombre: string;
+  especie: string;
+  raza: string;
+  edad: string;
+  genero: string;
+  estado: string;
+  imagen: File | null;
+}
+
 const CrearMascota: React.FC = () => {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<FormState>({
     nombre: "",
     especie: "",
     raza: "",
     edad: "",
     genero: "",
     estado: "",
-    imagen: null as File | null,
+    imagen: null,
   });
 
-  const [dragActive, setDragActive] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [dragActive, setDragActive] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const navigate = useNavigate();
 
-  // Manejo de inputs y selects
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Manejo de archivo
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       setFormData((prev) => ({ ...prev, imagen: e.target.files![0] }));
     }
   };
 
-  // Manejo de arrastrar archivo
   const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -41,7 +50,6 @@ const CrearMascota: React.FC = () => {
     }
   };
 
-  // Manejo de soltar archivo
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -49,29 +57,53 @@ const CrearMascota: React.FC = () => {
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
-      if (file.type.startsWith("image/")) {
+      if (file.type.startsWith('image/')) {
         setFormData((prev) => ({ ...prev, imagen: file }));
       }
     }
   };
 
-  // Quitar imagen seleccionada
   const removeImage = () => {
     setFormData((prev) => ({ ...prev, imagen: null }));
   };
 
-  // Enviar formulario (simulado)
-  const handleSubmit = () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsSubmitting(true);
-    setTimeout(() => {
+
+    const data = new FormData();
+    Object.entries(formData).forEach(([key, value]) => {
+      if (value) data.append(key, value as any);
+    });
+
+    const token = localStorage.getItem("token");
+
+    try {
+      const res = await fetch("http://localhost:5000/api/mascotas", {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+
+        body: data,
+      });
+
+      const json = await res.json();
+      if (res.ok) {
+        alert("Mascota creada con éxito");
+        navigate("/mascotas"); // 👈 Redirige a la página de mascotas
+      } else {
+        alert("Error: " + JSON.stringify(json));
+      }
+    } catch (err) {
+      console.error("Error de red:", err);
+    } finally {
       setIsSubmitting(false);
-      alert("Mascota creada con éxito");
-    }, 2000);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 py-12 px-4">
       <div className="max-w-4xl mx-auto">
+        
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold text-gray-900 mb-4">
@@ -119,7 +151,7 @@ const CrearMascota: React.FC = () => {
                 </div>
               )}
             </div>
-
+            
             {/* Upload/Edit Button */}
             <label
               htmlFor="imagen"
@@ -131,7 +163,7 @@ const CrearMascota: React.FC = () => {
                 <Camera size={20} />
               )}
             </label>
-
+            
             {/* Remove Button */}
             {formData.imagen && (
               <button
@@ -142,7 +174,7 @@ const CrearMascota: React.FC = () => {
                 <X size={16} />
               </button>
             )}
-
+            
             <input
               id="imagen"
               type="file"
@@ -156,172 +188,147 @@ const CrearMascota: React.FC = () => {
 
         {/* Form Container */}
         <div className="bg-white rounded-3xl shadow-xl p-8 md:p-12 border border-gray-100">
-          {/* Basic Info Section */}
-          <div className="bg-gradient-to-r from-gray-50 to-white p-8 rounded-2xl border border-gray-100 mb-8">
-            <h3 className="text-2xl font-semibold text-gray-900 mb-8 flex items-center">
-              <div className="w-3 h-3 bg-lime-400 rounded-full mr-4"></div>
-              Información Básica
-            </h3>
+          <form onSubmit={handleSubmit}>
+            {/* Basic Info Section */}
+            <div className="bg-gradient-to-r from-gray-50 to-white p-8 rounded-2xl border border-gray-100 mb-8">
+              <h3 className="text-2xl font-semibold text-gray-900 mb-8 flex items-center">
+                <div className="w-3 h-3 bg-lime-400 rounded-full mr-4"></div>
+                Información Básica
+              </h3>
+              
+              <div className="grid md:grid-cols-2 gap-8">
+                {/* Nombre */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Nombre de la mascota
+                  </label>
+                  <input
+                    type="text"
+                    name="nombre"
+                    value={formData.nombre}
+                    onChange={handleChange}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 placeholder-gray-400 text-lg"
+                    placeholder="Ej: Max, Luna, Rocky..."
+                  />
+                </div>
 
-            <div className="grid md:grid-cols-2 gap-8">
-              {/* Nombre */}
-              <div className="space-y-3">
-                <label
-                  htmlFor="nombre"
-                  className="block text-sm font-semibold text-gray-700"
-                >
-                  Nombre de la mascota
-                </label>
-                <input
-                  id="nombre"
-                  type="text"
-                  name="nombre"
-                  value={formData.nombre}
-                  onChange={handleChange}
-                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 placeholder-gray-400 text-lg"
-                  placeholder="Ej: Max, Luna, Rocky..."
-                />
-              </div>
+                {/* Edad */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Edad (años)
+                  </label>
+                  <input
+                    type="number"
+                    name="edad"
+                    value={formData.edad}
+                    onChange={handleChange}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 placeholder-gray-400 text-lg"
+                    placeholder="0"
+                    min="0"
+                    max="30"
+                  />
+                </div>
 
-              {/* Edad */}
-              <div className="space-y-3">
-                <label
-                  htmlFor="edad"
-                  className="block text-sm font-semibold text-gray-700"
-                >
-                  Edad (años)
-                </label>
-                <input
-                  id="edad"
-                  type="number"
-                  name="edad"
-                  value={formData.edad}
-                  onChange={handleChange}
-                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 placeholder-gray-400 text-lg"
-                  placeholder="0"
-                  min="0"
-                  max="30"
-                />
-              </div>
+                {/* Especie */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Especie
+                  </label>
+                  <select
+                    name="especie"
+                    value={formData.especie}
+                    onChange={handleChange}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 bg-white text-lg"
+                  >
+                    <option value="">Seleccionar especie</option>
+                    <option value="Perro">🐕 Perro</option>
+                    <option value="Gato">🐱 Gato</option>
+                    <option value="Ave">🦜 Ave</option>
+                    <option value="Otro">🐾 Otro</option>
+                  </select>
+                </div>
 
-              {/* Especie */}
-              <div className="space-y-3">
-                <label
-                  htmlFor="especie"
-                  className="block text-sm font-semibold text-gray-700"
-                >
-                  Especie
-                </label>
-                <select
-                  id="especie"
-                  name="especie"
-                  value={formData.especie}
-                  onChange={handleChange}
-                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 bg-white text-lg"
-                >
-                  <option value="">Seleccionar especie</option>
-                  <option value="Perro">🐕 Perro</option>
-                  <option value="Gato">🐱 Gato</option>
-                  <option value="Ave">🦜 Ave</option>
-                  <option value="Conejo">🐰 Conejo</option>
-                  <option value="Otro">🐾 Otro</option>
-                </select>
-              </div>
+                {/* Raza */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Raza
+                  </label>
+                  <input
+                    type="text"
+                    name="raza"
+                    value={formData.raza}
+                    onChange={handleChange}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 placeholder-gray-400 text-lg"
+                    placeholder="Ej: Labrador, Mestizo, Persa..."
+                  />
+                </div>
 
-              {/* Raza */}
-              <div className="space-y-3">
-                <label
-                  htmlFor="raza"
-                  className="block text-sm font-semibold text-gray-700"
-                >
-                  Raza
-                </label>
-                <input
-                  id="raza"
-                  type="text"
-                  name="raza"
-                  value={formData.raza}
-                  onChange={handleChange}
-                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 placeholder-gray-400 text-lg"
-                  placeholder="Ej: Labrador, Mestizo, Persa..."
-                />
-              </div>
+                {/* Género */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Género
+                  </label>
+                  <select
+                    name="genero"
+                    value={formData.genero}
+                    onChange={handleChange}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 bg-white text-lg"
+                  >
+                    <option value="">Seleccionar género</option>
+                    <option value="Macho">♂️ Macho</option>
+                    <option value="Hembra">♀️ Hembra</option>
+                  </select>
+                </div>
 
-              {/* Género */}
-              <div className="space-y-3">
-                <label
-                  htmlFor="genero"
-                  className="block text-sm font-semibold text-gray-700"
-                >
-                  Género
-                </label>
-                <select
-                  id="genero"
-                  name="genero"
-                  value={formData.genero}
-                  onChange={handleChange}
-                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 bg-white text-lg"
-                >
-                  <option value="">Seleccionar género</option>
-                  <option value="Macho">♂️ Macho</option>
-                  <option value="Hembra">♀️ Hembra</option>
-                </select>
-              </div>
-
-              {/* Estado */}
-              <div className="space-y-3">
-                <label
-                  htmlFor="estado"
-                  className="block text-sm font-semibold text-gray-700"
-                >
-                  Estado de adopción
-                </label>
-                <select
-                  id="estado"
-                  name="estado"
-                  value={formData.estado}
-                  onChange={handleChange}
-                  className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 bg-white text-lg"
-                >
-                  <option value="">Seleccionar estado</option>
-                  <option value="Disponible">✅ Disponible</option>
-                  <option value="En proceso">⏳ En proceso</option>
-                  <option value="Adoptado">❤️ Adoptado</option>
-                </select>
+                {/* Estado */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Estado de adopción
+                  </label>
+                  <select
+                    name="estado"
+                    value={formData.estado}
+                    onChange={handleChange}
+                    className="w-full px-5 py-4 border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 text-gray-900 bg-white text-lg"
+                  >
+                    <option value="">Seleccionar estado</option>
+                    <option value="Disponible">✅ Disponible</option>
+                    <option value="En proceso">⏳ En proceso</option>
+                    <option value="Adoptado">❤️ Adoptado</option>
+                  </select>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Submit Button */}
-          <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={isSubmitting}
-              className={`bg-gradient-to-r from-lime-400 to-lime-500 hover:from-lime-500 hover:to-lime-600 text-black font-bold py-5 px-16 rounded-2xl transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-4 text-lg ${
-                isSubmitting ? "animate-pulse" : ""
-              }`}
-            >
-              {isSubmitting ? (
-                <>
-                  <div className="w-6 h-6 border-3 border-black border-t-transparent rounded-full animate-spin"></div>
-                  Guardando mascota...
-                </>
-              ) : (
-                <>
-                  <Check size={24} />
-                  Registrar Mascota
-                </>
-              )}
-            </button>
-          </div>
+            {/* Submit Button */}
+            <div className="flex justify-center">
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className={`bg-gradient-to-r from-lime-400 to-lime-500 hover:from-lime-500 hover:to-lime-600 text-black font-bold py-5 px-16 rounded-2xl transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-4 text-lg ${
+                  isSubmitting ? "animate-pulse" : ""
+                }`}
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="w-6 h-6 border-3 border-black border-t-transparent rounded-full animate-spin"></div>
+                    Guardando mascota...
+                  </>
+                ) : (
+                  <>
+                    <Check size={24} />
+                    Registrar Mascota
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         </div>
 
         {/* Footer info */}
         <div className="text-center mt-8">
           <p className="text-gray-600 text-base mb-2">
-            Haz clic en el círculo verde o arrastra una imagen para agregar la
-            foto de perfil
+            Haz clic en el círculo verde o arrastra una imagen para agregar la foto de perfil
           </p>
           <p className="text-sm text-gray-400">
             Formatos soportados: JPG, PNG, WebP (máx. 5MB)
