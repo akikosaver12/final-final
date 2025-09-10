@@ -4,8 +4,7 @@ import ProductCard from '../components/shop/ProductCard';
 import Loading from '../components/common/Loading';
 import { Grid, List } from "lucide-react";
 
-
-const BASE_URL = "http://localhost:5000"; // Cambia si tu backend está en otra URL
+const BASE_URL = "http://localhost:5000";
 
 const ProductsPage: React.FC = () => {
   const { products, loading, error } = useProducts();
@@ -14,20 +13,36 @@ const ProductsPage: React.FC = () => {
   const [sortBy, setSortBy] = useState('name');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
+  // Mapear categorías a español
+  const getCategoryLabel = (categoria: string) => {
+    const categoryMap: Record<string, string> = {
+      'alimento': 'Alimento',
+      'juguetes': 'Juguetes',
+      'medicamentos': 'Medicamentos',
+      'accesorios': 'Accesorios',
+      'higiene': 'Higiene',
+      'otros': 'Otros'
+    };
+    return categoryMap[categoria] || categoria;
+  };
+
   // Normalizar datos que vienen del backend
   const normalizedProducts = products.map(p => ({
     id: p._id, 
     name: p.nombre,
-    description: p.description,
-    price: p.price,
-    category: p.category || "otros",
-    image: p.image ? `${BASE_URL}${p.image}` : "/placeholder.png",
+    description: p.descripcion,
+    price: p.precio, // Solo precio base, sin descuentos
+    category: p.categoria,
+    image: p.imagen ? (p.imagen.startsWith('http') ? p.imagen : `${BASE_URL}${p.imagen}`) : "/placeholder.png",
+    // Mantener datos originales para ProductCard
+    originalProduct: p
   }));
 
   // Filtrar + ordenar
   const filteredProducts = normalizedProducts
     .filter(product => {
-      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           product.description.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesCategory = selectedCategory === 'all' || product.category === selectedCategory;
       return matchesSearch && matchesCategory;
     })
@@ -41,7 +56,8 @@ const ProductsPage: React.FC = () => {
     });
 
   // Sacar categorías dinámicas
-  const categories = ['all', ...Array.from(new Set(normalizedProducts.map(p => p.category)))];
+  const uniqueCategories = Array.from(new Set(normalizedProducts.map(p => p.category)));
+  const categories = ['all', ...uniqueCategories];
 
   // Loading
   if (loading) {
@@ -87,8 +103,9 @@ const ProductsPage: React.FC = () => {
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="py-3 px-4 rounded-xl border border-gray-200 focus:ring-2 focus:ring-lime-500 shadow-sm"
             >
-              {categories.map(cat => (
-                <option key={cat} value={cat}>{cat === "all" ? "Todas" : cat}</option>
+              <option value="all">Todas</option>
+              {uniqueCategories.map(cat => (
+                <option key={cat} value={cat}>{getCategoryLabel(cat)}</option>
               ))}
             </select>
 
@@ -120,10 +137,25 @@ const ProductsPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Contador de resultados */}
+          <div className="mb-6">
+            <p className="text-gray-600">
+              {filteredProducts.length} producto{filteredProducts.length !== 1 ? 's' : ''} encontrado{filteredProducts.length !== 1 ? 's' : ''}
+              {selectedCategory !== 'all' && ` en ${getCategoryLabel(selectedCategory)}`}
+              {searchTerm && ` para "${searchTerm}"`}
+            </p>
+          </div>
+
           {/* 🛒 Productos */}
           {filteredProducts.length === 0 ? (
             <div className="text-center py-20">
               <h3 className="text-2xl font-bold mb-4">No se encontraron productos</h3>
+              <p className="text-gray-600 mb-6">
+                {searchTerm || selectedCategory !== 'all' 
+                  ? 'Prueba ajustando los filtros de búsqueda'
+                  : 'No hay productos disponibles en este momento'
+                }
+              </p>
               <button
                 onClick={() => { setSearchTerm(''); setSelectedCategory('all'); }}
                 className="bg-lime-500 hover:bg-lime-600 px-6 py-2 rounded-xl font-bold text-white shadow-md transition"
@@ -140,12 +172,26 @@ const ProductsPage: React.FC = () => {
               }
             >
               {filteredProducts.map(normalizedProduct => {
+                // Buscar el producto original completo
                 const originalProduct = products.find(p => p._id === normalizedProduct.id);
                 if (!originalProduct) return null;
+                
                 return (
-                  <ProductCard key={normalizedProduct.id} product={originalProduct} />
+                  <ProductCard 
+                    key={normalizedProduct.id} 
+                    product={originalProduct}
+                  />
                 );
               })}
+            </div>
+          )}
+
+          {/* Información adicional si hay productos */}
+          {filteredProducts.length > 0 && (
+            <div className="mt-12 text-center">
+              <div className="text-sm text-gray-500">
+                Mostrando {filteredProducts.length} de {products.length} productos disponibles
+              </div>
             </div>
           )}
         </div>

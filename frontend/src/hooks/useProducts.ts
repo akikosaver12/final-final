@@ -2,26 +2,39 @@ import { useState, useEffect } from "react";
 
 const BASE_URL = "http://localhost:5000";
 
-// 👉 Tipos según backend (MongoDB)
+// Tipos según tu esquema real de MongoDB (sin descuentos)
 interface BackendProduct {
   _id: string;
   nombre: string;
   descripcion: string;
   precio: number;
-  categoria: string;
+  categoria: 'alimento' | 'juguetes' | 'medicamentos' | 'accesorios' | 'higiene' | 'otros';
   imagen?: string;
+  stock: number;
+  envioGratis: boolean;
+  activo: boolean;
+  garantia: {
+    tiene: boolean;
+    meses: number;
+    descripcion: string;
+  };
+  usuario: {
+    name: string;
+    email: string;
+    telefono: string;
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
-// 👉 Tipo normalizado para frontend
-export interface Product {
+// Tipo normalizado para frontend (mantener compatibilidad)
+export interface Product extends BackendProduct {
   id: string;
   name: string;
   description: string;
   price: number;
   category: string;
   image?: string;
-  nombre: string;
-  _id: string;
 }
 
 export function useProducts() {
@@ -37,7 +50,7 @@ export function useProducts() {
 
         const token = localStorage.getItem("token");
 
-        // 👇 armamos headers dinámicamente
+        // Armamos headers dinámicamente
         const headers: HeadersInit = {
           "Content-Type": "application/json",
         };
@@ -56,17 +69,20 @@ export function useProducts() {
 
         const data: BackendProduct[] = await response.json();
 
-        // 👉 Normalizamos datos
-        const normalized: Product[] = data.map((p) => ({
-          id: p._id,
-          name: p.nombre,
-          description: p.descripcion,
-          price: p.precio,
-          category: p.categoria,
-          image: p.imagen,
-          nombre: p.nombre,
-          _id: p._id,
-        }));
+        // Normalizamos datos manteniendo toda la información original
+        const normalized: Product[] = data
+          .filter(p => p.activo) // Solo productos activos
+          .map((p) => ({
+            // Datos originales completos
+            ...p,
+            // Campos normalizados para compatibilidad
+            id: p._id,
+            name: p.nombre,
+            description: p.descripcion,
+            price: p.precio, // Solo el precio base, sin descuentos
+            category: p.categoria,
+            image: p.imagen,
+          }));
 
         setProducts(normalized);
       } catch (err: any) {
