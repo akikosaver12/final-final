@@ -1,4 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { 
+  Package, Users, Calendar, Plus, Edit3, Trash2, Eye, 
+  RefreshCw, ArrowLeft, Save, X, Camera, Shield, 
+  Truck, Tag, Award, AlertCircle, CheckCircle,
+  TrendingUp, Activity, Settings
+} from "lucide-react";
 
 const BASE_URL = "http://localhost:5000";
 
@@ -35,7 +41,7 @@ const AdminPanel = () => {
     envioGratis: false
   });
   
-  // NUEVO ESTADO PARA EDICIÓN
+  // ESTADO PARA EDICIÓN
   const [editingProduct, setEditingProduct] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   
@@ -51,7 +57,7 @@ const AdminPanel = () => {
   const [serverStatus, setServerStatus] = useState("checking");
   const fileRef = useRef(null);
 
-  // NUEVA FUNCIÓN PARA INICIAR EDICIÓN
+  // FUNCIÓN PARA INICIAR EDICIÓN
   const startEditProduct = (producto) => {
     setIsEditMode(true);
     setEditingProduct(producto);
@@ -81,7 +87,7 @@ const AdminPanel = () => {
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  // NUEVA FUNCIÓN PARA CANCELAR EDICIÓN
+  // FUNCIÓN PARA CANCELAR EDICIÓN
   const cancelEdit = () => {
     setIsEditMode(false);
     setEditingProduct(null);
@@ -473,784 +479,852 @@ const AdminPanel = () => {
     };
   }, [previewImage]);
 
+  const sidebarItems = [
+    { id: "productos", label: isEditMode ? "Editar Producto" : "Crear Producto", icon: Plus },
+    { id: "verProductos", label: "Ver Productos", icon: Package },
+    { id: "verUsuarios", label: "Ver Usuarios", icon: Users },
+    { id: "verCitas", label: "Ver Citas", icon: Calendar },
+  ];
+
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      {/* Sidebar */}
-      <aside className="w-64 bg-purple-700 text-white flex flex-col p-6">
-        <h2 className="text-2xl font-bold mb-4">👑 Admin</h2>
+    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
+      {/* Sidebar Moderno */}
+      <aside className="w-80 bg-white shadow-xl border-r border-gray-200">
+        <div className="p-8">
+          {/* Header del Admin */}
+          <div className="mb-8">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-lime-400 to-lime-500 rounded-2xl flex items-center justify-center">
+                <Settings className="text-black" size={24} />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Admin Panel</h2>
+                <p className="text-sm text-gray-500">Gestión del sistema</p>
+              </div>
+            </div>
 
-        <div
-          className={`mb-6 px-3 py-2 rounded text-sm ${
-            serverStatus === "online"
-              ? "bg-green-600"
-              : serverStatus === "offline"
-              ? "bg-red-600"
-              : "bg-yellow-600"
-          }`}
-        >
-          {serverStatus === "online" && "🟢 Servidor Online"}
-          {serverStatus === "offline" && "🔴 Servidor Offline"}
-          {serverStatus === "checking" && "🟡 Verificando..."}
+            {/* Status del servidor */}
+            <div
+              className={`px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-3 ${
+                serverStatus === "online"
+                  ? "bg-green-50 text-green-800 border border-green-200"
+                  : serverStatus === "offline"
+                  ? "bg-red-50 text-red-800 border border-red-200"
+                  : "bg-yellow-50 text-yellow-800 border border-yellow-200"
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full ${
+                serverStatus === "online" ? "bg-green-500" : 
+                serverStatus === "offline" ? "bg-red-500" : "bg-yellow-500"
+              }`} />
+              {serverStatus === "online" && "🟢 Servidor Online"}
+              {serverStatus === "offline" && "🔴 Servidor Offline"}
+              {serverStatus === "checking" && "🟡 Verificando..."}
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="space-y-2">
+            {sidebarItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setActiveTab(item.id);
+                    if (item.id !== "productos" && isEditMode) {
+                      cancelEdit();
+                    }
+                  }}
+                  className={`w-full text-left px-4 py-4 rounded-2xl transition-all duration-200 flex items-center gap-3 font-medium ${
+                    activeTab === item.id
+                      ? "bg-gradient-to-r from-lime-400 to-lime-500 text-black shadow-lg"
+                      : "hover:bg-gray-50 text-gray-700 hover:text-gray-900"
+                  }`}
+                >
+                  <Icon size={20} />
+                  {item.label}
+                </button>
+              );
+            })}
+          </nav>
         </div>
-
-        <button
-          onClick={() => {
-            setActiveTab("productos");
-            // Si estamos editando, cancelar la edición al cambiar de tab
-            if (isEditMode) {
-              cancelEdit();
-            }
-          }}
-          className={`text-left px-4 py-2 mb-2 rounded-lg ${
-            activeTab === "productos" ? "bg-purple-900" : "hover:bg-purple-600"
-          }`}
-        >
-          {isEditMode ? "✏️ Editar Producto" : "➕ Crear Producto"}
-        </button>
-        <button
-          onClick={() => setActiveTab("verProductos")}
-          className={`text-left px-4 py-2 mb-2 rounded-lg ${
-            activeTab === "verProductos" ? "bg-purple-900" : "hover:bg-purple-600"
-          }`}
-        >
-          📦 Ver Productos
-        </button>
-        <button
-          onClick={() => setActiveTab("verUsuarios")}
-          className={`text-left px-4 py-2 mb-2 rounded-lg ${
-            activeTab === "verUsuarios" ? "bg-purple-900" : "hover:bg-purple-600"
-          }`}
-        >
-          👥 Ver Usuarios
-        </button>
-        <button
-          onClick={() => setActiveTab("verCitas")}
-          className={`text-left px-4 py-2 mb-2 rounded-lg ${
-            activeTab === "verCitas" ? "bg-purple-900" : "hover:bg-purple-600"
-          }`}
-        >
-          📅 Ver Citas
-        </button>
       </aside>
 
-      {/* Contenido principal */}
-      <main className="flex-1 p-10">
-        <h1 className="text-3xl font-bold text-purple-700 mb-6">
-          Panel de Administración
-        </h1>
-
-        {warn && (
-          <div className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded">
-            {warn}
+      {/* Contenido Principal */}
+      <main className="flex-1 p-8 overflow-auto">
+        <div className="max-w-7xl mx-auto">
+          {/* Header */}
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">
+              Panel de Administración
+            </h1>
+            <div className="w-24 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
           </div>
-        )}
 
-        {/* Formulario Productos - ACTUALIZADO PARA CREAR/EDITAR */}
-        {activeTab === "productos" && (
-          <div>
-            {/* HEADER CON BOTÓN CANCELAR */}
-            {isEditMode && (
-              <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-lg font-semibold text-blue-800">
-                      ✏️ Editando: {editingProduct?.nombre}
-                    </h3>
-                    <p className="text-blue-600 text-sm">
-                      Modifica los campos que desees actualizar
-                    </p>
-                  </div>
-                  <button
-                    onClick={cancelEdit}
-                    className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600 transition-colors"
-                  >
-                    ❌ Cancelar Edición
-                  </button>
-                </div>
-              </div>
-            )}
+          {warn && (
+            <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl flex items-center gap-3">
+              <AlertCircle className="text-yellow-600" size={20} />
+              <span className="text-yellow-800">{warn}</span>
+            </div>
+          )}
 
-            <form
-              onSubmit={handleSubmit}
-              className="bg-white p-8 rounded-xl shadow-md max-w-4xl space-y-6"
-            >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Información básica */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-purple-700">
-                    {isEditMode ? "Editar Información Básica" : "Información Básica"}
-                  </h3>
-                  
-                  <input
-                    type="text"
-                    name="nombre"
-                    placeholder="Nombre del producto"
-                    className="w-full border p-3 rounded text-lg"
-                    onChange={handleChange}
-                    value={formData.nombre}
-                    required
-                  />
-                  
-                  <textarea
-                    name="descripcion"
-                    placeholder="Descripción"
-                    className="w-full border p-3 rounded text-lg"
-                    rows="3"
-                    onChange={handleChange}
-                    value={formData.descripcion}
-                    required
-                  />
-                  
-                  <div className="grid grid-cols-2 gap-3">
-                    <input
-                      type="number"
-                      name="precio"
-                      placeholder="Precio"
-                      min="0"
-                      step="0.01"
-                      className="w-full border p-3 rounded text-lg"
-                      onChange={handleChange}
-                      value={formData.precio}
-                      required
-                    />
-                    <input
-                      type="number"
-                      name="stock"
-                      placeholder="Stock"
-                      min="0"
-                      className="w-full border p-3 rounded text-lg"
-                      onChange={handleChange}
-                      value={formData.stock}
-                    />
-                  </div>
-                  
-                  <select
-                    name="categoria"
-                    className="w-full border p-3 rounded text-lg"
-                    onChange={handleChange}
-                    value={formData.categoria}
-                    required
-                  >
-                    {categorias.map((cat) => (
-                      <option key={cat.value} value={cat.value}>
-                        {cat.label}
-                      </option>
-                    ))}
-                  </select>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {isEditMode ? "Cambiar imagen (opcional)" : "Imagen del producto"}
-                    </label>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      name="imagen"
-                      accept="image/*"
-                      className="w-full"
-                      onChange={handleChange}
-                    />
-                    {isEditMode && !previewImage && editingProduct?.imagen && (
-                      <div className="mt-2">
-                        <p className="text-sm text-gray-600">Imagen actual:</p>
-                        <img
-                          src={
-                            editingProduct.imagen.startsWith("http")
-                              ? editingProduct.imagen
-                              : `${BASE_URL}${editingProduct.imagen}`
-                          }
-                          alt="Imagen actual"
-                          className="w-32 h-32 object-cover rounded-lg shadow mt-1"
-                        />
-                      </div>
-                    )}
-                  </div>
-                  
-                  {previewImage && (
+          {/* Formulario Productos - ACTUALIZADO PARA CREAR/EDITAR */}
+          {activeTab === "productos" && (
+            <div>
+              {/* HEADER CON BOTÓN CANCELAR */}
+              {isEditMode && (
+                <div className="mb-6 p-6 bg-blue-50 border border-blue-200 rounded-2xl">
+                  <div className="flex justify-between items-center">
                     <div>
-                      <p className="text-sm font-medium text-gray-700 mb-2">
-                        {isEditMode ? "Nueva imagen:" : "Vista previa:"}
+                      <h3 className="text-xl font-semibold text-blue-800 mb-2 flex items-center gap-3">
+                        <Edit3 className="text-blue-600" size={24} />
+                        ✏️ Editando: {editingProduct?.nombre}
+                      </h3>
+                      <p className="text-blue-600">
+                        Modifica los campos que desees actualizar
                       </p>
-                      <img
-                        src={previewImage}
-                        alt="preview"
-                        className="w-32 h-32 object-cover rounded-lg shadow"
-                      />
                     </div>
-                  )}
-                </div>
-                
-                {/* Opciones avanzadas */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-semibold text-purple-700">Opciones Avanzadas</h3>
-                  
-                  {/* Envío gratis */}
-                  <label className="flex items-center space-x-3 p-3 bg-green-50 rounded-lg cursor-pointer">
-                    <input
-                      type="checkbox"
-                      name="envioGratis"
-                      checked={formData.envioGratis}
-                      onChange={handleChange}
-                      className="w-5 h-5 text-green-600"
-                    />
-                    <span className="text-green-800 font-medium">🚚 Envío Gratis</span>
-                  </label>
-                  
-                  {/* Descuento */}
-                  <div className="p-4 bg-orange-50 rounded-lg">
-                    <label className="flex items-center space-x-3 mb-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="tieneDescuento"
-                        checked={formData.tieneDescuento}
-                        onChange={handleChange}
-                        className="w-5 h-5 text-orange-600"
-                      />
-                      <span className="text-orange-800 font-medium">🏷️ Tiene Descuento</span>
-                    </label>
-                    
-                    {formData.tieneDescuento && (
-                      <div className="space-y-3">
-                        <input
-                          type="number"
-                          name="porcentajeDescuento"
-                          placeholder="% de descuento"
-                          min="1"
-                          max="100"
-                          className="w-full border p-2 rounded"
-                          onChange={handleChange}
-                          value={formData.porcentajeDescuento}
-                          required={formData.tieneDescuento}
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <input
-                            type="date"
-                            name="fechaInicioDescuento"
-                            placeholder="Fecha inicio"
-                            className="w-full border p-2 rounded text-sm"
-                            onChange={handleChange}
-                            value={formData.fechaInicioDescuento}
-                          />
-                          <input
-                            type="date"
-                            name="fechaFinDescuento"
-                            placeholder="Fecha fin"
-                            className="w-full border p-2 rounded text-sm"
-                            onChange={handleChange}
-                            value={formData.fechaFinDescuento}
-                          />
-                        </div>
-                      </div>
-                    )}
+                    <button
+                      onClick={cancelEdit}
+                      className="bg-gray-500 text-white px-6 py-3 rounded-2xl hover:bg-gray-600 transition-colors flex items-center gap-2 font-medium"
+                    >
+                      <X size={16} />
+                      ❌ Cancelar Edición
+                    </button>
                   </div>
-                  
-                  {/* Garantía */}
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <label className="flex items-center space-x-3 mb-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        name="tieneGarantia"
-                        checked={formData.tieneGarantia}
-                        onChange={handleChange}
-                        className="w-5 h-5 text-blue-600"
-                      />
-                      <span className="text-blue-800 font-medium">🛡️ Tiene Garantía</span>
-                    </label>
-                    
-                    {formData.tieneGarantia && (
-                      <div className="space-y-3">
+                </div>
+              )}
+
+              <form
+                onSubmit={handleSubmit}
+                className="bg-white p-12 rounded-3xl shadow-xl border border-gray-100 space-y-8"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  {/* Información básica */}
+                  <div className="space-y-6">
+                    <div className="bg-gradient-to-r from-gray-50 to-white p-8 rounded-2xl border border-gray-100">
+                      <h3 className="text-2xl font-semibold text-gray-900 mb-8 flex items-center">
+                        <div className="w-3 h-3 bg-lime-400 rounded-full mr-4"></div>
+                        {isEditMode ? "Editar Información Básica" : "Información Básica"}
+                      </h3>
+                      
+                      <div className="space-y-6">
                         <input
-                          type="number"
-                          name="mesesGarantia"
-                          placeholder="Meses de garantía"
-                          min="1"
-                          max="120"
-                          className="w-full border p-2 rounded"
+                          type="text"
+                          name="nombre"
+                          placeholder="Nombre del producto"
+                          className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
                           onChange={handleChange}
-                          value={formData.mesesGarantia}
-                          required={formData.tieneGarantia}
+                          value={formData.nombre}
+                          required
                         />
+                        
                         <textarea
-                          name="descripcionGarantia"
-                          placeholder="Descripción de la garantía"
-                          className="w-full border p-2 rounded text-sm"
-                          rows="2"
+                          name="descripcion"
+                          placeholder="Descripción"
+                          className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg resize-none focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                          rows="3"
                           onChange={handleChange}
-                          value={formData.descripcionGarantia}
+                          value={formData.descripcion}
+                          required
                         />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              <button
-                type="submit"
-                className="w-full bg-purple-600 text-white py-3 rounded-lg text-lg hover:bg-purple-700 disabled:opacity-50"
-                disabled={loading || serverStatus !== "online"}
-              >
-                {loading ? 
-                  (isEditMode ? "Actualizando..." : "Subiendo...") : 
-                  (isEditMode ? "✏️ Actualizar Producto" : "➕ Crear Producto")
-                }
-              </button>
-            </form>
-          </div>
-        )}
-
-        {/* Ver Productos - VISTA ACTUALIZADA CON BOTÓN EDITAR */}
-        {activeTab === "verProductos" && (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-purple-700">Productos</h2>
-              <button
-                onClick={getProductos}
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-              >
-                🔄 Recargar
-              </button>
-            </div>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {productos.length === 0 ? (
-                <p className="text-gray-600">No hay productos registrados</p>
-              ) : (
-                productos.map((p) => (
-                  <div
-                    key={p._id}
-                    className="bg-white p-4 rounded-lg shadow-md flex flex-col"
-                  >
-                    {p.imagen && (
-                      <img
-                        src={
-                          p.imagen.startsWith("http")
-                            ? p.imagen
-                            : `${BASE_URL}${p.imagen}`
-                        }
-                        alt={p.nombre}
-                        className="w-full h-40 object-cover rounded-md mb-4"
-                        onError={(e) => {
-                          e.target.style.display = "none";
-                        }}
-                      />
-                    )}
-                    
-                    {/* Header con badges */}
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {p.envioGratis && (
-                        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
-                          🚚 Envío Gratis
-                        </span>
-                      )}
-                      {p.descuentoVigente && (
-                        <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full">
-                          🏷️ -{p.descuento.porcentaje}%
-                        </span>
-                      )}
-                      {p.garantia?.tiene && (
-                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
-                          🛡️ Garantía
-                        </span>
-                      )}
-                      <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
-                        {categorias.find(cat => cat.value === p.categoria)?.label || p.categoria}
-                      </span>
-                    </div>
-                    
-                    <h3 className="font-bold text-purple-700 text-xl mb-2">
-                      {p.nombre}
-                    </h3>
-                    
-                    {/* Precios */}
-                    <div className="mb-2">
-                      {p.descuentoVigente ? (
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                          <input
+                            type="number"
+                            name="precio"
+                            placeholder="Precio"
+                            min="0"
+                            step="0.01"
+                            className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                            onChange={handleChange}
+                            value={formData.precio}
+                            required
+                          />
+                          <input
+                            type="number"
+                            name="stock"
+                            placeholder="Stock"
+                            min="0"
+                            className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                            onChange={handleChange}
+                            value={formData.stock}
+                          />
+                        </div>
+                        
+                        <select
+                          name="categoria"
+                          className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg bg-white focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                          onChange={handleChange}
+                          value={formData.categoria}
+                          required
+                        >
+                          {categorias.map((cat) => (
+                            <option key={cat.value} value={cat.value}>
+                              {cat.label}
+                            </option>
+                          ))}
+                        </select>
+                        
                         <div>
-                          <span className="text-lg font-bold text-green-600">
-                            {formatearPrecio(p.precioConDescuento)}
-                          </span>
-                          <span className="text-sm text-gray-500 line-through ml-2">
-                            {formatearPrecio(p.precio)}
-                          </span>
-                          <div className="text-xs text-green-600">
-                            Ahorras: {formatearPrecio(p.ahorroDescuento)}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-lg font-bold text-gray-700">
-                          {formatearPrecio(p.precio)}
-                        </span>
-                      )}
-                    </div>
-                    
-                    <p className="text-gray-500 text-sm flex-1 mb-3">{p.descripcion}</p>
-                    
-                    {/* Información adicional */}
-                    <div className="space-y-2 text-xs text-gray-600 mb-4">
-                      <div className="flex justify-between">
-                        <span>Stock:</span>
-                        <span className={p.stock <= 0 ? "text-red-600" : "text-green-600"}>
-                          {p.stock || 0} unidades
-                        </span>
-                      </div>
-                      
-                      {p.garantia?.tiene && (
-                        <div className="flex justify-between">
-                          <span>Garantía:</span>
-                          <span>{p.garantia.meses} meses</span>
-                        </div>
-                      )}
-                      
-                      {p.descuento?.tiene && (
-                        <div className="text-xs">
-                          <div className="flex justify-between">
-                            <span>Descuento:</span>
-                            <span>{p.descuento.porcentaje}%</span>
-                          </div>
-                          {p.descuento.fechaInicio && (
-                            <div className="text-gray-500">
-                              Desde: {formatearFecha(p.descuento.fechaInicio)}
-                            </div>
-                          )}
-                          {p.descuento.fechaFin && (
-                            <div className="text-gray-500">
-                              Hasta: {formatearFecha(p.descuento.fechaFin)}
+                          <label className="block text-sm font-medium text-gray-700 mb-3">
+                            {isEditMode ? "Cambiar imagen (opcional)" : "Imagen del producto"}
+                          </label>
+                          <input
+                            ref={fileRef}
+                            type="file"
+                            name="imagen"
+                            accept="image/*"
+                            className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                            onChange={handleChange}
+                          />
+                          {isEditMode && !previewImage && editingProduct?.imagen && (
+                            <div className="mt-4">
+                              <p className="text-sm text-gray-600 mb-2">Imagen actual:</p>
+                              <img
+                                src={
+                                  editingProduct.imagen.startsWith("http")
+                                    ? editingProduct.imagen
+                                    : `${BASE_URL}${editingProduct.imagen}`
+                                }
+                                alt="Imagen actual"
+                                className="w-40 h-40 object-cover rounded-2xl shadow-lg"
+                              />
                             </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                    
-                    {/* BOTONES DE ACCIÓN ACTUALIZADOS */}
-                    <div className="mt-auto space-y-2">
-                      <p className="text-xs text-gray-400">ID: {p._id}</p>
-                      
-                      {/* NUEVO BOTÓN EDITAR */}
-                      <button
-                        onClick={() => startEditProduct(p)}
-                        className="w-full bg-blue-500 text-white px-3 py-2 rounded hover:bg-blue-600 transition-colors mb-2"
-                      >
-                        ✏️ Editar
-                      </button>
-                      
-                      <button
-                        onClick={() => eliminarProducto(p._id)}
-                        className="w-full bg-red-500 text-white px-3 py-2 rounded hover:bg-red-600 transition-colors"
-                      >
-                        🗑️ Eliminar
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* El resto de las secciones permanecen igual... */}
-        {/* Ver Usuarios */}
-        {activeTab === "verUsuarios" && !selectedUser && (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-purple-700">Usuarios</h2>
-              <button
-                onClick={getUsuarios}
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-              >
-                🔄 Recargar
-              </button>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
-              {usuarios.length === 0 ? (
-                <p className="text-gray-600">No hay usuarios registrados</p>
-              ) : (
-                usuarios.map((u) => (
-                  <div
-                    key={u._id}
-                    onClick={() => {
-                      setSelectedUser(u);
-                      setActiveTab("detalleUsuario");
-                      getMascotasUsuario(u._id);
-                    }}
-                    className="bg-white p-4 rounded-lg shadow-md cursor-pointer hover:bg-gray-50 transition-colors"
-                  >
-                    <h3 className="font-bold text-purple-700">{u.name}</h3>
-                    <p className="text-gray-600">{u.email}</p>
-                    <div className="flex justify-between items-center mt-2">
-                      <span className="text-xs text-white bg-purple-600 px-2 py-1 rounded">
-                        {u.role?.toUpperCase()}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        Mascotas: {u.totalMascotas || 0}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Ver Citas */}
-        {activeTab === "verCitas" && (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-bold text-purple-700">Citas</h2>
-              <button
-                onClick={getCitas}
-                className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-              >
-                🔄 Recargar
-              </button>
-            </div>
-            <div className="grid gap-4 md:grid-cols-1 lg:grid-cols-2">
-              {citas.length === 0 ? (
-                <p className="text-gray-600">No hay citas registradas</p>
-              ) : (
-                citas.map((c) => (
-                  <div
-                    key={c._id}
-                    className="bg-white p-6 rounded-lg shadow-md"
-                  >
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <h3 className="font-bold text-purple-700 text-xl">
-                          {c.usuario?.name || "Usuario no especificado"}
-                        </h3>
-                        <p className="text-gray-600">{c.usuario?.email}</p>
-                      </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        c.estado === "confirmada" ? "bg-green-100 text-green-800" :
-                        c.estado === "pendiente" ? "bg-yellow-100 text-yellow-800" :
-                        c.estado === "cancelada" ? "bg-red-100 text-red-800" :
-                        "bg-gray-100 text-gray-800"
-                      }`}>
-                        {c.estado?.toUpperCase() || "PENDIENTE"}
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="font-semibold text-gray-700">Fecha:</span>
-                          <p className="text-gray-600">{c.fecha ? new Date(c.fecha).toLocaleDateString() : "No especificada"}</p>
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-700">Hora:</span>
-                          <p className="text-gray-600">{c.hora || "No especificada"}</p>
-                        </div>
-                      </div>
-
-                      {c.mascota && (
-                        <div>
-                          <span className="font-semibold text-gray-700">Mascota:</span>
-                          <p className="text-gray-600">{c.mascota.nombre} ({c.mascota.especie})</p>
-                        </div>
-                      )}
-
-                      {c.motivo && (
-                        <div>
-                          <span className="font-semibold text-gray-700">Motivo:</span>
-                          <p className="text-gray-600">{c.motivo}</p>
-                        </div>
-                      )}
-
-                      {c.notas && (
-                        <div>
-                          <span className="font-semibold text-gray-700">Notas:</span>
-                          <p className="text-gray-600">{c.notas}</p>
-                        </div>
-                      )}
-
-                      <div className="pt-3 border-t border-gray-200">
-                        <p className="text-xs text-gray-400">ID: {c._id}</p>
-                        {c.createdAt && (
-                          <p className="text-xs text-gray-400">Creada: {new Date(c.createdAt).toLocaleString()}</p>
+                        
+                        {previewImage && (
+                          <div>
+                            <p className="text-sm font-medium text-gray-700 mb-2">
+                              {isEditMode ? "Nueva imagen:" : "Vista previa:"}
+                            </p>
+                            <img
+                              src={previewImage}
+                              alt="preview"
+                              className="w-40 h-40 object-cover rounded-2xl shadow-lg"
+                            />
+                          </div>
                         )}
                       </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Detalle Usuario */}
-        {activeTab === "detalleUsuario" && selectedUser && (
-          <div>
-            <button
-              onClick={() => {
-                setActiveTab("verUsuarios");
-                setSelectedUser(null);
-              }}
-              className="mb-6 bg-gray-200 px-4 py-2 rounded hover:bg-gray-300 transition-colors"
-            >
-              ⬅ Volver a Usuarios
-            </button>
-
-            <h2 className="text-2xl font-bold text-purple-700 mb-4">
-              Mascotas de {selectedUser.name}
-            </h2>
-
-            <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
-              {mascotasUsuario.length === 0 ? (
-                <p className="text-gray-600">
-                  Este usuario no tiene mascotas registradas
-                </p>
-              ) : (
-                mascotasUsuario.map((m) => (
-                  <div
-                    key={m._id}
-                    className="bg-white p-6 rounded-lg shadow-md"
-                  >
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h3 className="font-bold text-purple-700 text-xl">{m.nombre}</h3>
-                        <p className="text-gray-600">{m.especie} • {m.raza}</p>
+                  
+                  {/* Opciones avanzadas */}
+                  <div className="space-y-6">
+                    <div className="bg-gradient-to-r from-gray-50 to-white p-8 rounded-2xl border border-gray-100">
+                      <h3 className="text-2xl font-semibold text-gray-900 mb-8 flex items-center">
+                        <div className="w-3 h-3 bg-lime-400 rounded-full mr-4"></div>
+                        Opciones Avanzadas
+                      </h3>
+                      
+                      {/* Envío gratis */}
+                      <label className="flex items-center space-x-4 p-4 bg-green-50 rounded-2xl cursor-pointer mb-6 border border-green-100 hover:bg-green-100 transition-colors">
+                        <input
+                          type="checkbox"
+                          name="envioGratis"
+                          checked={formData.envioGratis}
+                          onChange={handleChange}
+                          className="w-5 h-5 text-green-600 rounded"
+                        />
+                        <Truck className="text-green-600" size={20} />
+                        <span className="text-green-800 font-semibold text-lg">🚚 Envío Gratis</span>
+                      </label>
+                      
+                      {/* Descuento */}
+                      <div className="p-6 bg-orange-50 rounded-2xl mb-6 border border-orange-100">
+                        <label className="flex items-center space-x-4 mb-4 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="tieneDescuento"
+                            checked={formData.tieneDescuento}
+                            onChange={handleChange}
+                            className="w-5 h-5 text-orange-600 rounded"
+                          />
+                          <Tag className="text-orange-600" size={20} />
+                          <span className="text-orange-800 font-semibold text-lg">Tiene Descuento</span>
+                        </label>
+                        
+                        {formData.tieneDescuento && (
+                          <div className="space-y-4">
+                            <input
+                              type="number"
+                              name="porcentajeDescuento"
+                              placeholder="% de descuento"
+                              min="1"
+                              max="100"
+                              className="w-full border-2 border-orange-200 p-3 rounded-2xl focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                              onChange={handleChange}
+                              value={formData.porcentajeDescuento}
+                              required={formData.tieneDescuento}
+                            />
+                            <div className="grid grid-cols-2 gap-3">
+                              <input
+                                type="date"
+                                name="fechaInicioDescuento"
+                                placeholder="Fecha inicio"
+                                className="w-full border-2 border-orange-200 p-3 rounded-2xl focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                                onChange={handleChange}
+                                value={formData.fechaInicioDescuento}
+                              />
+                              <input
+                                type="date"
+                                name="fechaFinDescuento"
+                                placeholder="Fecha fin"
+                                className="w-full border-2 border-orange-200 p-3 rounded-2xl focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
+                                onChange={handleChange}
+                                value={formData.fechaFinDescuento}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {m.imagen && (
+                      
+                      {/* Garantía */}
+                      <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100">
+                        <label className="flex items-center space-x-4 mb-4 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="tieneGarantia"
+                            checked={formData.tieneGarantia}
+                            onChange={handleChange}
+                            className="w-5 h-5 text-blue-600 rounded"
+                          />
+                          <Shield className="text-blue-600" size={20} />
+                          <span className="text-blue-800 font-semibold text-lg">Tiene Garantía</span>
+                        </label>
+                        
+                        {formData.tieneGarantia && (
+                          <div className="space-y-4">
+                            <input
+                              type="number"
+                              name="mesesGarantia"
+                              placeholder="Meses de garantía"
+                              min="1"
+                              max="120"
+                              className="w-full border-2 border-blue-200 p-3 rounded-2xl focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                              onChange={handleChange}
+                              value={formData.mesesGarantia}
+                              required={formData.tieneGarantia}
+                            />
+                            <textarea
+                              name="descripcionGarantia"
+                              placeholder="Descripción de la garantía"
+                              className="w-full border-2 border-blue-200 p-3 rounded-2xl focus:ring-2 focus:ring-blue-400 focus:border-blue-400 resize-none"
+                              rows="2"
+                              onChange={handleChange}
+                              value={formData.descripcionGarantia}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <button
+                  type="submit"
+                  className="w-full bg-gradient-to-r from-lime-400 to-lime-500 text-black py-4 px-8 rounded-2xl text-xl font-bold hover:from-lime-500 hover:to-lime-600 disabled:opacity-50 transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105 flex items-center justify-center gap-3"
+                  disabled={loading || serverStatus !== "online"}
+                >
+                  <Save size={24} />
+                  {loading ? 
+                    (isEditMode ? "Actualizando..." : "Subiendo...") : 
+                    (isEditMode ? "Actualizar Producto" : "Crear Producto")
+                  }
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Ver Productos - VISTA ACTUALIZADA CON BOTÓN EDITAR */}
+          {activeTab === "verProductos" && (
+            <div>
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-3xl font-bold text-gray-900">Productos</h2>
+                <button
+                  onClick={getProductos}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-2xl hover:bg-blue-600 transition-colors flex items-center gap-2 font-medium shadow-lg"
+                >
+                  <RefreshCw size={18} />
+                  Recargar
+                </button>
+              </div>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {productos.length === 0 ? (
+                  <div className="col-span-full text-center py-12">
+                    <Package className="mx-auto text-gray-400 mb-4" size={64} />
+                    <p className="text-gray-600 text-xl">No hay productos registrados</p>
+                  </div>
+                ) : (
+                  productos.map((p) => (
+                    <div
+                      key={p._id}
+                      className="bg-white p-6 rounded-2xl shadow-lg flex flex-col border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+                    >
+                      {p.imagen && (
                         <img
                           src={
-                            m.imagen.startsWith("http")
-                              ? m.imagen
-                              : `${BASE_URL}${m.imagen}`
+                            p.imagen.startsWith("http")
+                              ? p.imagen
+                              : `${BASE_URL}${p.imagen}`
                           }
-                          alt={m.nombre}
-                          className="w-20 h-20 object-cover rounded-lg"
-                          onError={(e) => (e.target.style.display = "none")}
+                          alt={p.nombre}
+                          className="w-full h-48 object-cover rounded-2xl mb-6"
+                          onError={(e) => {
+                            e.target.style.display = "none";
+                          }}
                         />
                       )}
+                      
+                      {/* Header con badges */}
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {p.envioGratis && (
+                          <span className="bg-green-100 text-green-800 text-xs px-3 py-1 rounded-full flex items-center gap-1 font-medium">
+                            <Truck size={12} />
+                            Envío Gratis
+                          </span>
+                        )}
+                        {p.descuentoVigente && (
+                          <span className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full flex items-center gap-1 font-medium">
+                            <Tag size={12} />
+                            -{p.descuento.porcentaje}%
+                          </span>
+                        )}
+                        {p.garantia?.tiene && (
+                          <span className="bg-blue-100 text-blue-800 text-xs px-3 py-1 rounded-full flex items-center gap-1 font-medium">
+                            <Shield size={12} />
+                            Garantía
+                          </span>
+                        )}
+                        <span className="bg-purple-100 text-purple-800 text-xs px-3 py-1 rounded-full font-medium">
+                          {categorias.find(cat => cat.value === p.categoria)?.label || p.categoria}
+                        </span>
+                      </div>
+                      
+                      <h3 className="font-bold text-gray-900 text-xl mb-3">
+                        {p.nombre}
+                      </h3>
+                      
+                      {/* Precios */}
+                      <div className="mb-4">
+                        {p.descuentoVigente ? (
+                          <div>
+                            <span className="text-2xl font-bold text-green-600">
+                              {formatearPrecio(p.precioConDescuento)}
+                            </span>
+                            <span className="text-sm text-gray-500 line-through ml-2">
+                              {formatearPrecio(p.precio)}
+                            </span>
+                            <div className="text-sm text-green-600 mt-1">
+                              Ahorras: {formatearPrecio(p.ahorroDescuento)}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-2xl font-bold text-gray-900">
+                            {formatearPrecio(p.precio)}
+                          </span>
+                        )}
+                      </div>
+                      
+                      <p className="text-gray-600 text-sm flex-1 mb-4">{p.descripcion}</p>
+                      
+                      {/* Información adicional */}
+                      <div className="space-y-2 text-sm text-gray-600 mb-6">
+                        <div className="flex justify-between">
+                          <span>Stock:</span>
+                          <span className={p.stock <= 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>
+                            {p.stock || 0} unidades
+                          </span>
+                        </div>
+                        
+                        {p.garantia?.tiene && (
+                          <div className="flex justify-between">
+                            <span>Garantía:</span>
+                            <span className="font-medium">{p.garantia.meses} meses</span>
+                          </div>
+                        )}
+                        
+                        {p.descuento?.tiene && (
+                          <div className="text-xs">
+                            <div className="flex justify-between">
+                              <span>Descuento:</span>
+                              <span className="font-medium">{p.descuento.porcentaje}%</span>
+                            </div>
+                            {p.descuento.fechaInicio && (
+                              <div className="text-gray-500">
+                                Desde: {formatearFecha(p.descuento.fechaInicio)}
+                              </div>
+                            )}
+                            {p.descuento.fechaFin && (
+                              <div className="text-gray-500">
+                                Hasta: {formatearFecha(p.descuento.fechaFin)}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* BOTONES DE ACCIÓN ACTUALIZADOS */}
+                      <div className="mt-auto space-y-3">
+                        <p className="text-xs text-gray-400 text-center">ID: {p._id}</p>
+                        
+                        {/* NUEVO BOTÓN EDITAR */}
+                        <button
+                          onClick={() => startEditProduct(p)}
+                          className="w-full bg-blue-500 text-white px-4 py-3 rounded-xl hover:bg-blue-600 transition-colors font-medium flex items-center justify-center gap-2 shadow-md"
+                        >
+                          <Edit3 size={16} />
+                          Editar
+                        </button>
+                        
+                        <button
+                          onClick={() => eliminarProducto(p._id)}
+                          className="w-full bg-red-500 text-white px-4 py-3 rounded-xl hover:bg-red-600 transition-colors font-medium flex items-center justify-center gap-2 shadow-md"
+                        >
+                          <Trash2 size={16} />
+                          Eliminar
+                        </button>
+                      </div>
                     </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
 
-                    {/* Información básica */}
-                    <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                          <span className="font-semibold text-gray-700">Edad:</span>
-                          <p className="text-gray-600">{m.edad ? `${m.edad} años` : "No especificada"}</p>
+          {/* Ver Usuarios */}
+          {activeTab === "verUsuarios" && !selectedUser && (
+            <div>
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-3xl font-bold text-gray-900">Usuarios</h2>
+                <button
+                  onClick={getUsuarios}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-2xl hover:bg-blue-600 transition-colors flex items-center gap-2 font-medium shadow-lg"
+                >
+                  <RefreshCw size={18} />
+                  Recargar
+                </button>
+              </div>
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {usuarios.length === 0 ? (
+                  <div className="col-span-full text-center py-12">
+                    <Users className="mx-auto text-gray-400 mb-4" size={64} />
+                    <p className="text-gray-600 text-xl">No hay usuarios registrados</p>
+                  </div>
+                ) : (
+                  usuarios.map((u) => (
+                    <div
+                      key={u._id}
+                      onClick={() => {
+                        setSelectedUser(u);
+                        setActiveTab("detalleUsuario");
+                        getMascotasUsuario(u._id);
+                      }}
+                      className="bg-white p-6 rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-100"
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-gradient-to-r from-purple-400 to-purple-500 rounded-2xl flex items-center justify-center">
+                          <Users className="text-white" size={20} />
                         </div>
-                        <div>
-                          <span className="font-semibold text-gray-700">Género:</span>
-                          <p className="text-gray-600">{m.genero || "No especificado"}</p>
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-700">Estado:</span>
-                          <p className="text-gray-600">{m.estado || "No especificado"}</p>
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-700">Enfermedades:</span>
-                          <p className="text-gray-600">{m.enfermedades || "Ninguna"}</p>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          u.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {u.role?.toUpperCase()}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-gray-900 text-lg mb-2">{u.name}</h3>
+                      <p className="text-gray-600 mb-4">{u.email}</p>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-500">Mascotas:</span>
+                        <span className="font-semibold text-gray-900">{u.totalMascotas || 0}</span>
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-gray-100">
+                        <div className="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 py-2 rounded-xl transition-colors flex items-center justify-center gap-2">
+                          <Eye size={16} />
+                          <span className="text-sm font-medium">Ver detalles</span>
                         </div>
                       </div>
-                      {m.historial && (
-                        <div className="mt-4">
-                          <span className="font-semibold text-gray-700">Historial:</span>
-                          <p className="text-gray-600 mt-1">{m.historial}</p>
-                        </div>
-                      )}
                     </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
 
-                    {/* Sección de vacunas */}
-                    <div className="mb-6">
-                      <h4 className="font-semibold text-purple-600 mb-3 text-lg">Vacunas</h4>
-                      {m.vacunas && m.vacunas.length > 0 ? (
-                        <div className="space-y-2 mb-4">
-                          {m.vacunas.map((v, idx) => (
-                            <div key={idx} className="flex justify-between items-center p-2 bg-green-50 rounded">
-                              <span className="font-medium text-green-800">{v.nombre}</span>
-                              <span className="text-green-600 text-sm">{new Date(v.fecha).toLocaleDateString()}</span>
-                            </div>
-                          ))}
+          {/* Ver Citas */}
+          {activeTab === "verCitas" && (
+            <div>
+              <div className="flex justify-between items-center mb-8">
+                <h2 className="text-3xl font-bold text-gray-900">Citas</h2>
+                <button
+                  onClick={getCitas}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-2xl hover:bg-blue-600 transition-colors flex items-center gap-2 font-medium shadow-lg"
+                >
+                  <RefreshCw size={18} />
+                  Recargar
+                </button>
+              </div>
+              <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+                {citas.length === 0 ? (
+                  <div className="col-span-full text-center py-12">
+                    <Calendar className="mx-auto text-gray-400 mb-4" size={64} />
+                    <p className="text-gray-600 text-xl">No hay citas registradas</p>
+                  </div>
+                ) : (
+                  citas.map((c) => (
+                    <div
+                      key={c._id}
+                      className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-shadow duration-300"
+                    >
+                      <div className="flex justify-between items-start mb-6">
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-xl mb-1">
+                            {c.usuario?.name || "Usuario no especificado"}
+                          </h3>
+                          <p className="text-gray-600">{c.usuario?.email}</p>
                         </div>
-                      ) : (
-                        <p className="text-gray-500 mb-4">No hay vacunas registradas</p>
-                      )}
-                      <form
-                        className="grid grid-cols-1 md:grid-cols-3 gap-2"
-                        onSubmit={(e) => handleAgregarVacuna(e, m._id)}
-                      >
-                        <input
-                          type="text"
-                          name="nombre"
-                          placeholder="Nombre vacuna"
-                          className="border rounded px-3 py-2 text-sm"
-                          required
-                        />
-                        <input
-                          type="date"
-                          name="fecha"
-                          className="border rounded px-3 py-2 text-sm"
-                          required
-                        />
-                        <button
-                          type="submit"
-                          className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 text-sm font-medium"
-                        >
-                          Agregar Vacuna
-                        </button>
-                      </form>
-                    </div>
+                        <span className={`px-3 py-2 rounded-full text-xs font-medium ${
+                          c.estado === "confirmada" ? "bg-green-100 text-green-800" :
+                          c.estado === "pendiente" ? "bg-yellow-100 text-yellow-800" :
+                          c.estado === "cancelada" ? "bg-red-100 text-red-800" :
+                          "bg-gray-100 text-gray-800"
+                        }`}>
+                          {c.estado?.toUpperCase() || "PENDIENTE"}
+                        </span>
+                      </div>
 
-                    {/* Sección de operaciones */}
-                    <div>
-                      <h4 className="font-semibold text-purple-600 mb-3 text-lg">Operaciones</h4>
-                      {m.operaciones && m.operaciones.length > 0 ? (
-                        <div className="space-y-3 mb-4">
-                          {m.operaciones.map((op, idx) => (
-                            <div key={idx} className="p-3 bg-blue-50 rounded">
-                              <div className="flex justify-between items-start mb-1">
-                                <span className="font-medium text-blue-800">{op.nombre}</span>
-                                <span className="text-blue-600 text-sm">{new Date(op.fecha).toLocaleDateString()}</span>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="bg-gray-50 p-3 rounded-xl">
+                            <span className="font-semibold text-gray-700 block mb-1">Fecha:</span>
+                            <p className="text-gray-900">{c.fecha ? new Date(c.fecha).toLocaleDateString() : "No especificada"}</p>
+                          </div>
+                          <div className="bg-gray-50 p-3 rounded-xl">
+                            <span className="font-semibold text-gray-700 block mb-1">Hora:</span>
+                            <p className="text-gray-900">{c.hora || "No especificada"}</p>
+                          </div>
+                        </div>
+
+                        {c.mascota && (
+                          <div className="bg-blue-50 p-3 rounded-xl">
+                            <span className="font-semibold text-blue-700 block mb-1">Mascota:</span>
+                            <p className="text-blue-900">{c.mascota.nombre} ({c.mascota.especie})</p>
+                          </div>
+                        )}
+
+                        {c.motivo && (
+                          <div className="bg-purple-50 p-3 rounded-xl">
+                            <span className="font-semibold text-purple-700 block mb-1">Motivo:</span>
+                            <p className="text-purple-900">{c.motivo}</p>
+                          </div>
+                        )}
+
+                        {c.notas && (
+                          <div className="bg-orange-50 p-3 rounded-xl">
+                            <span className="font-semibold text-orange-700 block mb-1">Notas:</span>
+                            <p className="text-orange-900">{c.notas}</p>
+                          </div>
+                        )}
+
+                        <div className="pt-4 border-t border-gray-200">
+                          <p className="text-xs text-gray-400">ID: {c._id}</p>
+                          {c.createdAt && (
+                            <p className="text-xs text-gray-400">Creada: {new Date(c.createdAt).toLocaleString()}</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Detalle Usuario */}
+          {activeTab === "detalleUsuario" && selectedUser && (
+            <div>
+              <button
+                onClick={() => {
+                  setActiveTab("verUsuarios");
+                  setSelectedUser(null);
+                }}
+                className="mb-8 bg-gray-200 px-6 py-3 rounded-2xl hover:bg-gray-300 transition-colors flex items-center gap-2 font-medium"
+              >
+                <ArrowLeft size={18} />
+                Volver a Usuarios
+              </button>
+
+              <h2 className="text-3xl font-bold text-gray-900 mb-8">
+                Mascotas de {selectedUser.name}
+              </h2>
+
+              <div className="grid gap-8 md:grid-cols-1 lg:grid-cols-2">
+                {mascotasUsuario.length === 0 ? (
+                  <div className="col-span-full text-center py-12 bg-white rounded-2xl shadow-lg">
+                    <Activity className="mx-auto text-gray-400 mb-4" size={64} />
+                    <p className="text-gray-600 text-xl">
+                      Este usuario no tiene mascotas registradas
+                    </p>
+                  </div>
+                ) : (
+                  mascotasUsuario.map((m) => (
+                    <div
+                      key={m._id}
+                      className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100"
+                    >
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-2xl">{m.nombre}</h3>
+                          <p className="text-gray-600 text-lg">{m.especie} • {m.raza}</p>
+                        </div>
+                        {m.imagen && (
+                          <img
+                            src={
+                              m.imagen.startsWith("http")
+                                ? m.imagen
+                                : `${BASE_URL}${m.imagen}`
+                            }
+                            alt={m.nombre}
+                            className="w-24 h-24 object-cover rounded-2xl shadow-lg"
+                            onError={(e) => (e.target.style.display = "none")}
+                          />
+                        )}
+                      </div>
+
+                      {/* Información básica */}
+                      <div className="mb-8 p-6 bg-gray-50 rounded-2xl">
+                        <div className="grid grid-cols-2 gap-6 text-sm">
+                          <div>
+                            <span className="font-semibold text-gray-700 block mb-1">Edad:</span>
+                            <p className="text-gray-900">{m.edad ? `${m.edad} años` : "No especificada"}</p>
+                          </div>
+                          <div>
+                            <span className="font-semibold text-gray-700 block mb-1">Género:</span>
+                            <p className="text-gray-900">{m.genero || "No especificado"}</p>
+                          </div>
+                          <div>
+                            <span className="font-semibold text-gray-700 block mb-1">Estado:</span>
+                            <p className="text-gray-900">{m.estado || "No especificado"}</p>
+                          </div>
+                          <div>
+                            <span className="font-semibold text-gray-700 block mb-1">Enfermedades:</span>
+                            <p className="text-gray-900">{m.enfermedades || "Ninguna"}</p>
+                          </div>
+                        </div>
+                        {m.historial && (
+                          <div className="mt-6">
+                            <span className="font-semibold text-gray-700 block mb-2">Historial:</span>
+                            <p className="text-gray-900">{m.historial}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Sección de vacunas */}
+                      <div className="mb-8">
+                        <h4 className="font-semibold text-green-700 mb-4 text-xl">Vacunas</h4>
+                        {m.vacunas && m.vacunas.length > 0 ? (
+                          <div className="space-y-3 mb-6">
+                            {m.vacunas.map((v, idx) => (
+                              <div key={idx} className="flex justify-between items-center p-3 bg-green-50 rounded-xl">
+                                <span className="font-medium text-green-800">{v.nombre}</span>
+                                <span className="text-green-600 text-sm">{new Date(v.fecha).toLocaleDateString()}</span>
                               </div>
-                              <p className="text-blue-700 text-sm">{op.descripcion}</p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-gray-500 mb-4">No hay operaciones registradas</p>
-                      )}
-                      <form
-                        className="space-y-2"
-                        onSubmit={(e) => handleAgregarOperacion(e, m._id)}
-                      >
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-gray-500 mb-6">No hay vacunas registradas</p>
+                        )}
+                        <form
+                          className="grid grid-cols-1 md:grid-cols-3 gap-3"
+                          onSubmit={(e) => handleAgregarVacuna(e, m._id)}
+                        >
                           <input
                             type="text"
                             name="nombre"
-                            placeholder="Nombre operación"
-                            className="border rounded px-3 py-2 text-sm"
+                            placeholder="Nombre vacuna"
+                            className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-green-400 focus:border-green-400"
                             required
                           />
                           <input
                             type="date"
                             name="fecha"
-                            className="border rounded px-3 py-2 text-sm"
+                            className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-green-400 focus:border-green-400"
                             required
                           />
-                        </div>
-                        <textarea
-                          name="descripcion"
-                          placeholder="Descripción de la operación"
-                          className="w-full border rounded px-3 py-2 text-sm"
-                          rows="2"
-                          required
-                        />
-                        <button
-                          type="submit"
-                          className="w-full bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 text-sm font-medium"
+                          <button
+                            type="submit"
+                            className="bg-green-500 text-white px-6 py-3 rounded-xl hover:bg-green-600 text-sm font-medium transition-colors"
+                          >
+                            Agregar Vacuna
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Sección de operaciones */}
+                      <div>
+                        <h4 className="font-semibold text-blue-700 mb-4 text-xl">Operaciones</h4>
+                        {m.operaciones && m.operaciones.length > 0 ? (
+                          <div className="space-y-4 mb-6">
+                            {m.operaciones.map((op, idx) => (
+                              <div key={idx} className="p-4 bg-blue-50 rounded-xl">
+                                <div className="flex justify-between items-start mb-2">
+                                  <span className="font-medium text-blue-800">{op.nombre}</span>
+                                  <span className="text-blue-600 text-sm">{new Date(op.fecha).toLocaleDateString()}</span>
+                                </div>
+                                <p className="text-blue-700 text-sm">{op.descripcion}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-gray-500 mb-6">No hay operaciones registradas</p>
+                        )}
+                        <form
+                          className="space-y-3"
+                          onSubmit={(e) => handleAgregarOperacion(e, m._id)}
                         >
-                          Agregar Operación
-                        </button>
-                      </form>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              name="nombre"
+                              placeholder="Nombre operación"
+                              className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                              required
+                            />
+                            <input
+                              type="date"
+                              name="fecha"
+                              className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                              required
+                            />
+                          </div>
+                          <textarea
+                            name="descripcion"
+                            placeholder="Descripción de la operación"
+                            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm resize-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
+                            rows="3"
+                            required
+                          />
+                          <button
+                            type="submit"
+                            className="w-full bg-blue-500 text-white px-6 py-3 rounded-xl hover:bg-blue-600 text-sm font-medium transition-colors"
+                          >
+                            Agregar Operación
+                          </button>
+                        </form>
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </main>
     </div>
   );
 };
 
 export default AdminPanel;
+                            
