@@ -25,6 +25,7 @@ type CartAction =
 // Claves para localStorage
 const CART_STORAGE_KEY = 'veterinary_cart';
 const USER_SESSION_KEY = 'user_session'; // Para detectar cambios de sesión
+// Asegúrate de que este valor coincida exactamente con el nombre de la clave usada en tu sistema de autenticación
 
 // Funciones para localStorage
 const saveCartToStorage = (cartState: CartState) => {
@@ -80,22 +81,27 @@ const saveCurrentUserId = (userId: string | null) => {
   }
 };
 
-// NUEVA FUNCIÓN: Detectar si hay usuario autenticado
 const isUserAuthenticated = (): boolean => {
   try {
     // Verifica múltiples fuentes de autenticación
     const userSession = localStorage.getItem(USER_SESSION_KEY);
-    const authToken = localStorage.getItem('auth_token'); // Token común
-    const accessToken = localStorage.getItem('access_token'); // Otro token común
-    const userInfo = localStorage.getItem('user_info'); // Info de usuario
+    // Si tu sistema usa otro nombre de clave para la sesión, cámbialo aquí
+    const authToken = localStorage.getItem('auth_token');
+    const accessToken = localStorage.getItem('access_token');
+    const userInfo = localStorage.getItem('user_info');
     
     // Si existe cualquiera de estos, considera que hay usuario autenticado
-    return !!(userSession || authToken || accessToken || userInfo);
+    // Puedes ajustar la lógica según tu flujo real de autenticación
+    return Boolean(userSession && JSON.parse(userSession)?.userId)
+      || !!authToken
+      || !!accessToken
+      || !!userInfo;
   } catch (error) {
     console.error('Error verificando autenticación:', error);
     return false;
   }
 };
+
 
 // Crear el contexto
 interface CartContextType {

@@ -7,6 +7,10 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto"); // 📧 NUEVO - Para generar tokens de verificación
+const nodemailer = require("nodemailer"); // 📧 NUEVO - Para envío de emails
+// Importación para Google OAuth
+const { OAuth2Client } = require('google-auth-library');
 
 dotenv.config();
 
@@ -15,7 +19,93 @@ const router = express.Router();
 const PORT = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "super_secret_key";
 
-app.use(cors());
+// Constantes para Google OAuth - CORREGIDO
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "503963971592-17vo21di0tjf249341l4ocscemath5p0.apps.googleusercontent.com";
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+// NUEVAS CONSTANTES PARA URLs
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:5000';
+
+// 📧 RATE LIMITING PARA EMAILS - NUEVO
+const emailRateLimit = new Map();
+
+const checkEmailRateLimit = (email) => {
+  const now = Date.now();
+  const lastSent = emailRateLimit.get(email);
+  
+  if (lastSent && (now - lastSent) < 60000) { // 1 minuto
+    return false;
+  }
+  
+  emailRateLimit.set(email, now);
+  return true;
+};
+
+// 📧 CONFIGURACIÓN MEJORADA DE NODEMAILER - CORREGIDO
+const crearTransporter = () => {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER || 'tu-email@gmail.com',
+      pass: process.env.EMAIL_PASS || 'tu-password-de-aplicacion'
+    },
+    // Configuraciones adicionales para mayor confiabilidad
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
+    rateLimit: 14 // emails per second
+  });
+
+  // Verificar configuración al iniciar
+  transporter.verify()
+    .then(() => {
+      console.log('✅ Servidor de email configurado correctamente');
+    })
+    .catch((error) => {
+      console.error('❌ Error en configuración de email:', error);
+      console.log('📧 Verifica las variables EMAIL_USER y EMAIL_PASS en tu .env');
+    });
+
+  return transporter;
+};
+
+const transporter = crearTransporter();
+
+const corsOptions = {
+  origin: [
+    'http://localhost:3000',    // React dev server
+    'http://127.0.0.1:3000',   // Variante de localhost
+    'https://accounts.google.com', // Google OAuth
+    'https://www.googleapis.com'   // Google APIs
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin'
+  ],
+  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
+  preflightContinue: false,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+// Agregar middleware adicional para manejo de preflight - versión corregida
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    res.header('Access-Control-Allow-Origin', req.headers.origin);
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With,Accept,Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
 app.use(express.json());
 
 // Crear carpeta uploads si no existe
@@ -42,9 +132,9 @@ const connectDB = async () => {
 connectDB();
 
 /* ======================
-   MODELOS ACTUALIZADOS
+   MODELOS ACTUALIZADOS CON VERIFICACIÓN DE EMAIL
    ====================== */
-// ESQUEMA DE USUARIO ACTUALIZADO CON TELÉFONO Y DIRECCIÓN (SIN CÓDIGO POSTAL)
+// ESQUEMA DE USUARIO ACTUALIZADO CON TELÉFONO, DIRECCIÓN, GOOGLE OAUTH Y VERIFICACIÓN EMAIL
 const userSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
@@ -69,9 +159,29 @@ const userSchema = new mongoose.Schema(
       pais: { type: String, required: true, trim: true, default: 'Colombia' }
     },
     role: { type: String, default: "user", enum: ["user", "admin"] },
+    // CAMPOS PARA GOOGLE OAUTH
+    googleId: { type: String, unique: true, sparse: true },
+    profilePicture: { type: String },
+    authMethod: { type: String, enum: ["local", "google", "both"], default: "local" },
+    // 📧 CAMPOS PARA VERIFICACIÓN DE EMAIL - NUEVO
+    emailVerified: { type: Boolean, default: false },
+    emailVerificationToken: { type: String },
+    emailVerificationExpires: { type: Date },
+    // Para usuarios de Google, el email ya está verificado
+    pendingActivation: { type: Boolean, default: true } // True hasta que se verifique el email
   },
   { timestamps: true }
 );
+
+// 📧 MIDDLEWARE PARA VERIFICACIÓN AUTOMÁTICA DE GOOGLE - NUEVO
+userSchema.pre('save', function(next) {
+  if (this.googleId && !this.emailVerified) {
+    this.emailVerified = true;
+    this.pendingActivation = false;
+  }
+  next();
+});
+
 const User = mongoose.model("User", userSchema);
 
 const mascotaSchema = new mongoose.Schema(
@@ -315,7 +425,7 @@ const normalizarFecha = (fechaString) => {
   return new Date(fechaString + 'T00:00:00');
 };
 
-// NUEVAS FUNCIONES DE VALIDACIÓN (SIN CÓDIGO POSTAL)
+// FUNCIONES DE VALIDACIÓN
 const validarTelefono = (telefono) => {
   // Remover espacios y caracteres especiales para validación
   const telefonoLimpio = telefono.replace(/[\s\-\(\)]/g, '');
@@ -344,7 +454,7 @@ const validarDireccion = (direccion) => {
   return { valido: true };
 };
 
-// NUEVA FUNCIÓN PARA VALIDAR DATOS DE PRODUCTO
+// FUNCIÓN PARA VALIDAR DATOS DE PRODUCTO
 const validarProducto = (datos) => {
   const { nombre, descripcion, precio, descuento, garantia, categoria, stock } = datos;
   
@@ -392,8 +502,212 @@ const validarProducto = (datos) => {
 };
 
 /* ======================
-   RUTAS DE AUTENTICACIÓN ACTUALIZADAS
+   📧 FUNCIONES DE EMAIL MEJORADAS - NUEVO
    ====================== */
+
+// Función para generar token de verificación
+const generarTokenVerificacion = () => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+// 📧 FUNCIÓN PARA LIMPIAR TOKENS EXPIRADOS - NUEVO
+const limpiarTokensExpirados = async () => {
+  try {
+    const result = await User.deleteMany({
+      emailVerificationExpires: { $lt: new Date() },
+      emailVerified: false
+    });
+    console.log(`🗑️ Tokens expirados eliminados: ${result.deletedCount}`);
+  } catch (error) {
+    console.error('Error limpiando tokens:', error);
+  }
+};
+
+// Ejecutar cada hora
+setInterval(limpiarTokensExpirados, 60 * 60 * 1000);
+
+// Plantilla HTML MEJORADA para email de verificación - con URLs dinámicas
+const plantillaEmailVerificacion = (nombre, tokenVerificacion) => {
+  const urlVerificacion = `${FRONTEND_URL}/verificar-email?token=${tokenVerificacion}`;
+  
+  return `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Verificar Email - Clínica Veterinaria</title>
+        <style>
+            @media only screen and (max-width: 600px) {
+                .container { width: 95% !important; padding: 20px !important; }
+                .content { padding: 20px !important; }
+                .verify-button { padding: 12px 20px !important; font-size: 14px !important; }
+            }
+            body {
+                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                margin: 0;
+                padding: 20px;
+                background-color: #f4f4f4;
+            }
+            .container {
+                max-width: 600px;
+                margin: 0 auto;
+                background: #ffffff;
+                border-radius: 12px;
+                overflow: hidden;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            }
+            .header {
+                background: linear-gradient(135deg, #7c3aed, #6d28d9);
+                color: white;
+                padding: 30px;
+                text-align: center;
+            }
+            .logo {
+                font-size: 32px;
+                font-weight: bold;
+                margin-bottom: 10px;
+            }
+            .content {
+                padding: 40px 30px;
+            }
+            .verify-button {
+                display: inline-block;
+                background: linear-gradient(135deg, #7c3aed, #6d28d9);
+                color: white !important;
+                padding: 16px 32px;
+                text-decoration: none;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 16px;
+                margin: 20px 0;
+                transition: transform 0.2s;
+            }
+            .verify-button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(124, 58, 237, 0.3);
+            }
+            .warning {
+                background: #fef2f2;
+                border-left: 4px solid #dc2626;
+                padding: 16px;
+                border-radius: 4px;
+                margin: 20px 0;
+            }
+            .footer {
+                background: #f8fafc;
+                padding: 20px;
+                text-align: center;
+                font-size: 12px;
+                color: #64748b;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <div class="logo">🐾 Clínica Veterinaria</div>
+                <p>Tu cuenta está casi lista</p>
+            </div>
+            
+            <div class="content">
+                <h2 style="color: #7c3aed; margin-bottom: 20px;">¡Hola ${nombre}!</h2>
+                
+                <p>Gracias por registrarte en nuestra clínica veterinaria. Solo necesitas verificar tu email para activar tu cuenta.</p>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                    <a href="${urlVerificacion}" class="verify-button">
+                        ✅ Verificar mi correo
+                    </a>
+                </div>
+                
+                <p>Si el botón no funciona, copia este enlace:</p>
+                <p style="word-break: break-all; background: #f1f5f9; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 14px;">
+                    ${urlVerificacion}
+                </p>
+                
+                <div class="warning">
+                    <strong>⚠️ Importante:</strong> Este enlace expira en 24 horas.
+                </div>
+                
+                <p><strong>Una vez verificado podrás:</strong></p>
+                <ul style="color: #64748b;">
+                    <li>Registrar tus mascotas</li>
+                    <li>Agendar citas veterinarias</li>
+                    <li>Acceder a nuestros productos</li>
+                    <li>Gestionar tu perfil</li>
+                </ul>
+            </div>
+            
+            <div class="footer">
+                <p>Este email fue enviado desde Clínica Veterinaria</p>
+                <p>Si no te registraste, puedes ignorar este mensaje</p>
+                <p>© ${new Date().getFullYear()} Todos los derechos reservados</p>
+            </div>
+        </div>
+    </body>
+    </html>
+  `;
+};
+
+// Función para enviar email de verificación
+const enviarEmailVerificacion = async (email, nombre, token) => {
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER || 'tu-email@gmail.com',
+      to: email,
+      subject: '🐾 Verificar tu cuenta - Clínica Veterinaria',
+      html: plantillaEmailVerificacion(nombre, token)
+    };
+
+    const result = await transporter.sendMail(mailOptions);
+    console.log('✅ Email de verificación enviado a:', email);
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('❌ Error enviando email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+/* ======================
+   FUNCIONES GOOGLE OAUTH - MEJORADAS
+   ====================== */
+
+// Función para verificar token de Google - MEJORADA
+const verifyGoogleToken = async (token) => {
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: token,
+      audience: GOOGLE_CLIENT_ID, // Usar la constante correcta
+    });
+    
+    const payload = ticket.getPayload();
+    
+    // Validar que el email esté verificado
+    if (!payload.email_verified) {
+      throw new Error('Email de Google no verificado');
+    }
+    
+    return {
+      googleId: payload.sub,
+      email: payload.email,
+      name: payload.name,
+      picture: payload.picture,
+      emailVerified: payload.email_verified,
+    };
+  } catch (error) {
+    console.error('Error verificando token de Google:', error);
+    throw new Error('Token de Google inválido');
+  }
+};
+
+/* ======================
+   📧 RUTAS DE AUTENTICACIÓN ACTUALIZADAS CON VERIFICACIÓN EMAIL
+   ====================== */
+
+// 📧 REGISTRO TRADICIONAL CON VERIFICACIÓN POR EMAIL - ACTUALIZADO
 router.post("/register", async (req, res) => {
   try {
     const { name, email, password, telefono, direccion, role } = req.body;
@@ -421,10 +735,26 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: validacionDireccion.mensaje });
     }
 
+    // Verificar si el email ya existe
     const exists = await User.findOne({ email: email.toLowerCase() });
-    if (exists) return res.status(400).json({ error: "El correo ya está registrado" });
+    if (exists) {
+      if (exists.emailVerified) {
+        return res.status(400).json({ error: "El correo ya está registrado y verificado" });
+      } else {
+        // Email existe pero no verificado - eliminar registro anterior
+        await User.deleteOne({ _id: exists._id });
+        console.log('🗑️ Registro anterior no verificado eliminado para:', email);
+      }
+    }
+
+    // 📧 GENERAR TOKEN DE VERIFICACIÓN - NUEVO
+    const tokenVerificacion = generarTokenVerificacion();
+    const expiracionToken = new Date();
+    expiracionToken.setHours(expiracionToken.getHours() + 24); // 24 horas
 
     const hashed = await bcrypt.hash(password, 10);
+    
+    // 📧 CREAR USUARIO PENDIENTE DE VERIFICACIÓN - ACTUALIZADO
     const nuevoUsuario = new User({ 
       name: name.trim(), 
       email: email.trim().toLowerCase(), 
@@ -436,22 +766,36 @@ router.post("/register", async (req, res) => {
         estado: direccion.estado.trim(),
         pais: direccion.pais ? direccion.pais.trim() : 'Colombia'
       },
-      role 
+      role,
+      // 📧 CAMPOS DE VERIFICACIÓN - NUEVO
+      emailVerificationToken: tokenVerificacion,
+      emailVerificationExpires: expiracionToken,
+      emailVerified: false,
+      pendingActivation: true
     });
 
     await nuevoUsuario.save();
+    console.log('📧 Usuario creado pendiente de verificación:', email);
 
-    res.status(201).json({ 
-      message: "Usuario registrado con éxito",
-      usuario: {
-        id: nuevoUsuario._id,
-        name: nuevoUsuario.name,
-        email: nuevoUsuario.email,
-        telefono: nuevoUsuario.telefono,
-        direccion: nuevoUsuario.direccion,
-        role: nuevoUsuario.role
-      }
-    });
+    // 📧 ENVIAR EMAIL DE VERIFICACIÓN - NUEVO
+    const emailEnviado = await enviarEmailVerificacion(email, name, tokenVerificacion);
+    
+    if (emailEnviado.success) {
+      res.status(201).json({ 
+        message: "Registro iniciado exitosamente",
+        requiereVerificacion: true,
+        email: email,
+        instrucciones: "Hemos enviado un email de verificación a tu correo. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta."
+      });
+    } else {
+      // Si falla el envío del email, eliminar el usuario creado
+      await User.deleteOne({ _id: nuevoUsuario._id });
+      res.status(500).json({ 
+        error: "Error al enviar email de verificación. Por favor, intenta de nuevo.",
+        detalles: emailEnviado.error
+      });
+    }
+
   } catch (error) {
     console.error("Error en registro:", error);
     if (error.name === 'ValidationError') {
@@ -465,6 +809,134 @@ router.post("/register", async (req, res) => {
   }
 });
 
+// 📧 RUTA PARA VERIFICAR EMAIL MEJORADA - NUEVO
+router.get("/verify-email/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+    
+    console.log('🔍 Verificando token:', token);
+
+    // Validar formato del token
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) {
+      return res.status(400).json({ 
+        error: "Token inválido",
+        codigo: "INVALID_FORMAT",
+        accion: "El formato del token no es válido"
+      });
+    }
+
+    // Buscar usuario con el token
+    const usuario = await User.findOne({
+      emailVerificationToken: token,
+      emailVerificationExpires: { $gt: new Date() }, // Token no expirado
+      emailVerified: false
+    });
+
+    if (!usuario) {
+      return res.status(400).json({ 
+        error: "Token de verificación inválido o expirado",
+        codigo: "TOKEN_NOT_FOUND",
+        accion: "Por favor, regístrate nuevamente o solicita un nuevo email de verificación"
+      });
+    }
+
+    // Activar usuario
+    usuario.emailVerified = true;
+    usuario.pendingActivation = false;
+    usuario.emailVerificationToken = undefined;
+    usuario.emailVerificationExpires = undefined;
+    
+    await usuario.save();
+    
+    console.log('✅ Email verificado exitosamente para:', usuario.email);
+
+    res.json({
+      success: true,
+      message: "¡Email verificado exitosamente!",
+      usuario: {
+        id: usuario._id,
+        name: usuario.name,
+        email: usuario.email
+      },
+      redirigir: "/login"
+    });
+
+  } catch (error) {
+    console.error("Error verificando email:", error);
+    res.status(500).json({ 
+      error: "Error interno del servidor",
+      codigo: "SERVER_ERROR"
+    });
+  }
+});
+
+// 📧 RUTA PARA REENVIAR EMAIL DE VERIFICACIÓN MEJORADA - NUEVO
+router.post("/resend-verification", async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ error: "Email es requerido" });
+    }
+
+    // Verificar rate limiting
+    if (!checkEmailRateLimit(email)) {
+      return res.status(429).json({ 
+        error: "Debes esperar 1 minuto antes de solicitar otro email",
+        codigo: "RATE_LIMIT",
+        tiempoEspera: "60 segundos"
+      });
+    }
+
+    // Buscar usuario no verificado
+    const usuario = await User.findOne({
+      email: email.toLowerCase(),
+      emailVerified: false,
+      pendingActivation: true
+    });
+
+    if (!usuario) {
+      return res.status(404).json({ 
+        error: "No se encontró una cuenta pendiente de verificación con este email",
+        codigo: "USER_NOT_FOUND"
+      });
+    }
+
+    // Generar nuevo token
+    const nuevoToken = generarTokenVerificacion();
+    const nuevaExpiracion = new Date();
+    nuevaExpiracion.setHours(nuevaExpiracion.getHours() + 24);
+
+    usuario.emailVerificationToken = nuevoToken;
+    usuario.emailVerificationExpires = nuevaExpiracion;
+    await usuario.save();
+
+    // Reenviar email
+    const emailEnviado = await enviarEmailVerificacion(email, usuario.name, nuevoToken);
+    
+    if (emailEnviado.success) {
+      res.json({
+        message: "Email de verificación reenviado exitosamente",
+        email: email,
+        expiraEn: "24 horas"
+      });
+    } else {
+      res.status(500).json({
+        error: "Error al reenviar email de verificación",
+        codigo: "EMAIL_SEND_FAILED"
+      });
+    }
+
+  } catch (error) {
+    console.error("Error reenviando email:", error);
+    res.status(500).json({ 
+      error: "Error interno del servidor",
+      codigo: "SERVER_ERROR"
+    });
+  }
+});
+
+// 📧 LOGIN ACTUALIZADO PARA VERIFICAR EMAIL - MODIFICADO
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -475,6 +947,16 @@ router.post("/login", async (req, res) => {
 
     const u = await User.findOne({ email: email.toLowerCase() });
     if (!u) return res.status(400).json({ error: "Usuario no encontrado" });
+
+    // 📧 VERIFICAR SI EL EMAIL ESTÁ VERIFICADO (solo para usuarios locales) - NUEVO
+    if (!u.googleId && !u.emailVerified) {
+      return res.status(403).json({ 
+        error: "Debes verificar tu email antes de iniciar sesión",
+        requiereVerificacion: true,
+        email: u.email,
+        mensaje: "Revisa tu bandeja de entrada y haz clic en el enlace de verificación"
+      });
+    }
 
     const ok = await bcrypt.compare(password, u.password);
     if (!ok) return res.status(400).json({ error: "Contraseña incorrecta" });
@@ -488,7 +970,10 @@ router.post("/login", async (req, res) => {
         email: u.email, 
         telefono: u.telefono,
         direccion: u.direccion,
-        role: u.role 
+        role: u.role,
+        profilePicture: u.profilePicture,
+        authMethod: u.googleId ? 'both' : 'local',
+        emailVerified: u.emailVerified
       },
       token,
       redirectTo: u.role === "admin" ? "/admin" : "/home",
@@ -496,6 +981,232 @@ router.post("/login", async (req, res) => {
   } catch (error) {
     console.error("Error en login:", error);
     res.status(500).json({ error: "Error en el servidor" });
+  }
+});
+
+/* ======================
+   GOOGLE OAUTH ROUTES - MEJORADAS CON VERIFICACIÓN
+   ====================== */
+
+// Ruta para autenticación con Google - MEJORADA
+router.post("/auth/google", async (req, res) => {
+  try {
+    const { credential, userData } = req.body;
+    
+    console.log('📧 Iniciando autenticación con Google...');
+    
+    if (!credential) {
+      return res.status(400).json({ error: "Token de Google requerido" });
+    }
+
+    // Verificar el token con Google
+    const googleUser = await verifyGoogleToken(credential);
+    console.log('✅ Usuario de Google verificado:', googleUser.email);
+
+    // Buscar usuario existente por email o googleId
+    let usuario = await User.findOne({ 
+      $or: [
+        { email: googleUser.email.toLowerCase() },
+        { googleId: googleUser.googleId }
+      ]
+    });
+
+    if (usuario) {
+      // Usuario existente - hacer login
+      console.log('👤 Usuario existente encontrado, iniciando sesión...');
+      
+      // Actualizar datos de Google si no los tiene
+      if (!usuario.googleId) {
+        usuario.googleId = googleUser.googleId;
+        usuario.profilePicture = googleUser.picture;
+        usuario.authMethod = 'both';
+        // 📧 PARA USUARIOS DE GOOGLE, EL EMAIL YA ESTÁ VERIFICADO - NUEVO
+        usuario.emailVerified = true;
+        usuario.pendingActivation = false;
+        await usuario.save();
+        console.log('🔄 Datos de Google agregados al usuario existente');
+      }
+
+      const token = jwt.sign({ id: usuario._id, role: usuario.role }, JWT_SECRET, { expiresIn: "1d" });
+
+      res.json({
+        user: {
+          id: usuario._id,
+          name: usuario.name,
+          email: usuario.email,
+          telefono: usuario.telefono,
+          direccion: usuario.direccion,
+          role: usuario.role,
+          profilePicture: usuario.profilePicture || googleUser.picture,
+          authMethod: usuario.googleId ? 'both' : 'google',
+          emailVerified: true // 📧 GOOGLE EMAILS SIEMPRE ESTÁN VERIFICADOS
+        },
+        token,
+        redirectTo: usuario.role === "admin" ? "/admin" : "/home",
+        message: "Sesión iniciada con Google"
+      });
+
+    } else {
+      // Usuario nuevo - necesita completar registro
+      console.log('🆕 Usuario nuevo de Google, requiere datos adicionales...');
+      
+      // Verificar si se proporcionaron datos adicionales
+      if (!userData || !userData.telefono || !userData.direccion) {
+        return res.json({
+          requiresAdditionalInfo: true,
+          googleUser: {
+            name: googleUser.name,
+            email: googleUser.email,
+            picture: googleUser.picture,
+            googleId: googleUser.googleId
+          },
+          message: "Se requiere información adicional para completar el registro"
+        });
+      }
+
+      // Validar datos adicionales
+      if (!validarTelefono(userData.telefono)) {
+        return res.status(400).json({ 
+          error: "El teléfono debe tener un formato válido (7-15 dígitos)" 
+        });
+      }
+
+      const validacionDireccion = validarDireccion(userData.direccion);
+      if (!validacionDireccion.valido) {
+        return res.status(400).json({ error: validacionDireccion.mensaje });
+      }
+
+      // Crear nuevo usuario
+      const hashedPassword = await bcrypt.hash("google_oauth_" + googleUser.googleId, 10);
+      
+      const nuevoUsuario = new User({
+        name: googleUser.name,
+        email: googleUser.email.toLowerCase(),
+        password: hashedPassword,
+        telefono: userData.telefono.trim(),
+        direccion: {
+          calle: userData.direccion.calle.trim(),
+          ciudad: userData.direccion.ciudad.trim(),
+          estado: userData.direccion.estado.trim(),
+          pais: userData.direccion.pais || 'Colombia'
+        },
+        googleId: googleUser.googleId,
+        profilePicture: googleUser.picture,
+        authMethod: 'google',
+        role: "user",
+        // 📧 PARA USUARIOS DE GOOGLE, EL EMAIL YA ESTÁ VERIFICADO - NUEVO
+        emailVerified: true,
+        pendingActivation: false
+      });
+
+      await nuevoUsuario.save();
+      console.log('✅ Nuevo usuario creado con Google:', nuevoUsuario.email);
+
+      const token = jwt.sign({ id: nuevoUsuario._id, role: nuevoUsuario.role }, JWT_SECRET, { expiresIn: "1d" });
+
+      res.status(201).json({
+        user: {
+          id: nuevoUsuario._id,
+          name: nuevoUsuario.name,
+          email: nuevoUsuario.email,
+          telefono: nuevoUsuario.telefono,
+          direccion: nuevoUsuario.direccion,
+          role: nuevoUsuario.role,
+          profilePicture: nuevoUsuario.profilePicture,
+          authMethod: 'google',
+          emailVerified: true // 📧 GOOGLE EMAILS SIEMPRE ESTÁN VERIFICADOS
+        },
+        token,
+        redirectTo: "/home",
+        message: "Cuenta creada exitosamente con Google"
+      });
+    }
+
+  } catch (error) {
+    console.error("❌ Error en autenticación con Google:", error);
+    
+    if (error.message === 'Token de Google inválido' || error.message === 'Email de Google no verificado') {
+      return res.status(401).json({ error: error.message });
+    }
+    
+    if (error.code === 11000) {
+      return res.status(400).json({ error: "El email ya está registrado" });
+    }
+    
+    res.status(500).json({ 
+      error: "Error en el servidor durante autenticación con Google",
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Ruta para vincular cuenta de Google (usuario ya logueado)
+router.post("/auth/google/link", verifyToken, async (req, res) => {
+  try {
+    const { credential } = req.body;
+    
+    if (!credential) {
+      return res.status(400).json({ error: "Token de Google requerido" });
+    }
+
+    const googleUser = await verifyGoogleToken(credential);
+    const usuario = await User.findById(req.user.id);
+
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    // Verificar que el email coincida
+    if (googleUser.email.toLowerCase() !== usuario.email.toLowerCase()) {
+      return res.status(400).json({ 
+        error: "El email de Google debe coincidir con el email de tu cuenta" 
+      });
+    }
+
+    // Vincular cuenta
+    usuario.googleId = googleUser.googleId;
+    usuario.profilePicture = googleUser.picture;
+    await usuario.save();
+
+    res.json({
+      message: "Cuenta de Google vinculada exitosamente",
+      user: {
+        id: usuario._id,
+        name: usuario.name,
+        email: usuario.email,
+        profilePicture: usuario.profilePicture,
+        hasGoogleAuth: true
+      }
+    });
+
+  } catch (error) {
+    console.error("Error vinculando cuenta de Google:", error);
+    res.status(500).json({ error: "Error al vincular cuenta de Google" });
+  }
+});
+
+// Ruta para desvincular Google
+router.delete("/auth/google/unlink", verifyToken, async (req, res) => {
+  try {
+    const usuario = await User.findById(req.user.id);
+    
+    if (!usuario) {
+      return res.status(404).json({ error: "Usuario no encontrado" });
+    }
+
+    if (!usuario.googleId) {
+      return res.status(400).json({ error: "No hay cuenta de Google vinculada" });
+    }
+
+    usuario.googleId = undefined;
+    usuario.profilePicture = undefined;
+    await usuario.save();
+
+    res.json({ message: "Cuenta de Google desvinculada exitosamente" });
+
+  } catch (error) {
+    console.error("Error desvinculando Google:", error);
+    res.status(500).json({ error: "Error al desvincular cuenta de Google" });
   }
 });
 
@@ -509,7 +1220,7 @@ router.get("/auth/me", verifyToken, async (req, res) => {
   }
 });
 
-// NUEVA RUTA PARA ACTUALIZAR PERFIL DE USUARIO
+// RUTA PARA ACTUALIZAR PERFIL DE USUARIO
 router.put("/usuarios/perfil", verifyToken, async (req, res) => {
   try {
     const { name, telefono, direccion } = req.body;
@@ -1659,15 +2370,18 @@ router.get("/admin/citas/estadisticas", verifyToken, isAdmin, async (req, res) =
 });
 
 /* ======================
-   Salud
+   📧 Salud - ACTUALIZADA
    ====================== */
 router.get("/health", (req, res) => {
   console.log('🩺 Health check solicitado');
   res.json({ 
     ok: true, 
-    message: "🩺 Servidor veterinario funcionando correctamente",
+    message: "🩺 Servidor veterinario funcionando correctamente con verificación de email",
     timestamp: new Date().toISOString(),
-    mongodb: mongoose.connection.readyState === 1 ? 'Conectado' : 'Desconectado'
+    mongodb: mongoose.connection.readyState === 1 ? 'Conectado' : 'Desconectado',
+    emailService: transporter ? 'Configurado' : 'No configurado',
+    frontendUrl: FRONTEND_URL,
+    backendUrl: BACKEND_URL
   });
 });
 
@@ -1695,17 +2409,19 @@ app.use((err, req, res, next) => {
 });
 
 /* ======================
-   Servidor
+   📧 Servidor - ACTUALIZADO
    ====================== */
 app.listen(PORT, () => {
   console.log("🚀=======================================");
   console.log(`🩺 Servidor Veterinario corriendo en:`);
-  console.log(`📍 http://localhost:${PORT}`);
-  console.log(`🔗 API disponible en: http://localhost:${PORT}/api`);
+  console.log(`📍 ${BACKEND_URL}`);
+  console.log(`🔗 API disponible en: ${BACKEND_URL}/api`);
   console.log("🩺 Endpoints principales:");
   console.log("   • Salud: GET /api/health");
-  console.log("   • Registro: POST /api/register");
-  console.log("   • Login: POST /api/login");
+  console.log("   • Registro: POST /api/register (📧 CON VERIFICACIÓN EMAIL)");
+  console.log("   • Verificar Email: GET /api/verify-email/:token");
+  console.log("   • Reenviar Verificación: POST /api/resend-verification");
+  console.log("   • Login: POST /api/login (📧 VERIFICA EMAIL)");
   console.log("   • Actualizar Perfil: PUT /api/usuarios/perfil");
   console.log("   • Mascotas: GET/POST /api/mascotas");
   console.log("   • Citas: GET/POST /api/citas");
@@ -1713,5 +2429,20 @@ app.listen(PORT, () => {
   console.log("   • Admin Dashboard: GET /api/admin/dashboard");
   console.log("   • Productos: GET/POST/PUT/DELETE /api/productos");
   console.log("   • Categorías: GET /api/productos/categorias/disponibles");
+  console.log("🔐 Autenticación con Google configurada:");
+  console.log("   • POST /api/auth/google - Autenticar con Google");
+  console.log("   • POST /api/auth/google/link - Vincular cuenta Google");
+  console.log("   • DELETE /api/auth/google/unlink - Desvincular Google");
+  console.log("   • Google Client ID:", GOOGLE_CLIENT_ID);
+  console.log("📧 SISTEMA DE VERIFICACIÓN POR EMAIL ACTIVO:");
+  console.log("   • Registro tradicional requiere verificación de email");
+  console.log("   • Usuarios de Google automáticamente verificados");
+  console.log("   • Emails HTML profesionales con plantilla personalizada");
+  console.log("   • Tokens seguros con expiración de 24 horas");
+  console.log("   • Reenvío de verificación disponible");
+  console.log("   • Login bloqueado hasta verificar email");
+  console.log("   • Rate limiting: 1 email por minuto por dirección");
+  console.log("   • Limpieza automática de tokens expirados cada hora");
+  console.log(`📧 URLs configuradas: Frontend=${FRONTEND_URL}, Backend=${BACKEND_URL}`);
   console.log("=======================================🚀");
 });
