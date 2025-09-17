@@ -14,6 +14,14 @@ const { OAuth2Client } = require('google-auth-library');
 
 dotenv.config();
 
+// DEBUG TEMPORAL - MOVIDO AL LUGAR CORRECTO
+console.log('=== DEBUG EMAIL CONFIG ===');
+console.log('EMAIL_USER:', process.env.EMAIL_USER);
+console.log('EMAIL_PASS definido:', !!process.env.EMAIL_PASS);
+console.log('EMAIL_PASS length:', process.env.EMAIL_PASS?.length);
+console.log('EMAIL_PASS es string:', typeof process.env.EMAIL_PASS === 'string');
+console.log('=============================');
+
 const app = express();
 const router = express.Router();
 const PORT = process.env.PORT || 5000;
@@ -42,35 +50,98 @@ const checkEmailRateLimit = (email) => {
   return true;
 };
 
-// 📧 CONFIGURACIÓN MEJORADA DE NODEMAILER - CORREGIDO
+// 📧 CONFIGURACIÓN MEJORADA DE NODEMAILER - VERSIÓN CORREGIDA
 const crearTransporter = () => {
-  const transporter = nodemailer.createTransport({
+  const emailUser = process.env.EMAIL_USER;
+  const emailPass = process.env.EMAIL_PASS;
+  
+  console.log('DEBUG: Verificando credenciales...');
+  console.log('EMAIL_USER:', emailUser);
+  console.log('EMAIL_PASS existe:', !!emailPass);
+  console.log('EMAIL_PASS es string:', typeof emailPass === 'string');
+  
+  if (!emailUser || !emailPass) {
+    console.error('ERROR: EMAIL_USER o EMAIL_PASS no definidos');
+    return null;
+  }
+  
+  if (emailUser === 'tu-email@gmail.com' || emailPass === 'tu-password-de-aplicacion') {
+    console.error('ERROR: Usando valores placeholder en .env');
+    return null;
+  }
+
+  // Configuración específica para Gmail con más opciones
+  const transporter = nodemailer.createTransporter({
     service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // true para 465, false para otros puertos
     auth: {
-      user: process.env.EMAIL_USER || 'tu-email@gmail.com',
-      pass: process.env.EMAIL_PASS || 'tu-password-de-aplicacion'
+      user: emailUser,
+      pass: emailPass
     },
-    // Configuraciones adicionales para mayor confiabilidad
+    tls: {
+      rejectUnauthorized: false
+    },
+    // Configuraciones adicionales
     pool: true,
-    maxConnections: 5,
-    maxMessages: 100,
-    rateLimit: 14 // emails per second
+    maxConnections: 1,
+    rateDelta: 20000, // 20 segundos entre emails
+    rateLimit: 3, // máximo 3 emails por rateDelta
+    debug: true, // Habilitar logs detallados
+    logger: true
   });
 
-  // Verificar configuración al iniciar
-  transporter.verify()
-    .then(() => {
-      console.log('✅ Servidor de email configurado correctamente');
-    })
-    .catch((error) => {
-      console.error('❌ Error en configuración de email:', error);
-      console.log('📧 Verifica las variables EMAIL_USER y EMAIL_PASS en tu .env');
-    });
+  // Verificar configuración inmediatamente con manejo de errores mejorado
+  transporter.verify((error, success) => {
+    if (error) {
+      console.error('ERROR en verificación de email:', error);
+      console.log('\n🔧 GUÍA DE SOLUCIÓN:');
+      console.log('1. Verifica que EMAIL_USER sea tu email real de Gmail');
+      console.log('2. Verifica que EMAIL_PASS sea una contraseña de aplicación (16 caracteres)');
+      console.log('3. Asegúrate de tener habilitada la verificación en 2 pasos en Google');
+      console.log('4. Genera una nueva contraseña de aplicación en: https://myaccount.google.com/apppasswords');
+      console.log('5. Reinicia el servidor después de actualizar las variables');
+      console.log('6. EMAIL_PASS no debe tener espacios - ejemplo: jzkulnzczqpnkeii');
+      console.log('Posibles causas específicas:');
+      if (error.message.includes('Invalid login')) {
+        console.log('- CAUSA: Contraseña de aplicación incorrecta');
+      } else if (error.message.includes('Username and Password not accepted')) {
+        console.log('- CAUSA: Credenciales rechazadas - genera nueva contraseña de aplicación');
+      } else if (error.message.includes('Connection timeout')) {
+        console.log('- CAUSA: Problema de red o firewall');
+      }
+      console.log('');
+    } else {
+      console.log('EXITO: Servidor de email configurado correctamente');
+      console.log('Listo para enviar emails desde:', emailUser);
+    }
+  });
 
   return transporter;
 };
 
-const transporter = crearTransporter();
+// Crear transporter con verificación
+let transporter;
+try {
+  transporter = crearTransporter();
+  console.log('Transporter creado:', !!transporter);
+} catch (error) {
+  console.error('❌ Error crítico creando transporter:', error);
+  transporter = null;
+}
+
+// Middleware para verificar que el email esté configurado antes de intentar enviar
+const verificarConfiguracionEmail = (req, res, next) => {
+  if (!transporter) {
+    return res.status(500).json({
+      error: 'Servicio de email no configurado',
+      codigo: 'EMAIL_NOT_CONFIGURED',
+      mensaje: 'El administrador debe configurar las credenciales de email'
+    });
+  }
+  next();
+};
 
 const corsOptions = {
   origin: [
@@ -502,7 +573,7 @@ const validarProducto = (datos) => {
 };
 
 /* ======================
-   📧 FUNCIONES DE EMAIL MEJORADAS - NUEVO
+   📧 FUNCIONES DE EMAIL MEJORADAS - ACTUALIZADAS
    ====================== */
 
 // Función para generar token de verificación
@@ -652,22 +723,50 @@ const plantillaEmailVerificacion = (nombre, tokenVerificacion) => {
   `;
 };
 
-// Función para enviar email de verificación
+// Función mejorada para enviar email de verificación
 const enviarEmailVerificacion = async (email, nombre, token) => {
+  if (!transporter) {
+    console.error('❌ Transporter no configurado');
+    return { success: false, error: 'Servicio de email no configurado' };
+  }
+
   try {
     const mailOptions = {
-      from: process.env.EMAIL_USER || 'tu-email@gmail.com',
+      from: {
+        name: 'Clínica Veterinaria',
+        address: process.env.EMAIL_USER
+      },
       to: email,
       subject: '🐾 Verificar tu cuenta - Clínica Veterinaria',
-      html: plantillaEmailVerificacion(nombre, token)
+      html: plantillaEmailVerificacion(nombre, token),
+      // Opciones adicionales para mejorar entregabilidad
+      replyTo: process.env.EMAIL_USER,
+      headers: {
+        'X-Mailer': 'Clinica-Veterinaria-App',
+        'X-Priority': '3'
+      }
     };
 
     const result = await transporter.sendMail(mailOptions);
     console.log('✅ Email de verificación enviado a:', email);
+    console.log('📧 Message ID:', result.messageId);
+    
     return { success: true, messageId: result.messageId };
   } catch (error) {
     console.error('❌ Error enviando email:', error);
-    return { success: false, error: error.message };
+    
+    // Proporcionar mensajes de error más específicos
+    let errorMessage = 'Error desconocido al enviar email';
+    
+    if (error.code === 'EAUTH') {
+      errorMessage = 'Credenciales de email incorrectas. Verifica EMAIL_USER y EMAIL_PASS';
+    } else if (error.code === 'ESOCKET') {
+      errorMessage = 'Error de conexión con Gmail. Verifica tu conexión a internet';
+    } else if (error.code === 'EENVELOPE') {
+      errorMessage = 'Dirección de email inválida';
+    }
+    
+    return { success: false, error: errorMessage, details: error.message };
   }
 };
 
@@ -708,7 +807,7 @@ const verifyGoogleToken = async (token) => {
    ====================== */
 
 // 📧 REGISTRO TRADICIONAL CON VERIFICACIÓN POR EMAIL - ACTUALIZADO
-router.post("/register", async (req, res) => {
+router.post("/register", verificarConfiguracionEmail, async (req, res) => {
   try {
     const { name, email, password, telefono, direccion, role } = req.body;
     
@@ -777,7 +876,7 @@ router.post("/register", async (req, res) => {
     await nuevoUsuario.save();
     console.log('📧 Usuario creado pendiente de verificación:', email);
 
-    // 📧 ENVIAR EMAIL DE VERIFICACIÓN - NUEVO
+    // 📧 ENVIAR EMAIL DE VERIFICACIÓN CON MEJOR MANEJO DE ERRORES
     const emailEnviado = await enviarEmailVerificacion(email, name, tokenVerificacion);
     
     if (emailEnviado.success) {
@@ -785,14 +884,20 @@ router.post("/register", async (req, res) => {
         message: "Registro iniciado exitosamente",
         requiereVerificacion: true,
         email: email,
-        instrucciones: "Hemos enviado un email de verificación a tu correo. Por favor, revisa tu bandeja de entrada y haz clic en el enlace para activar tu cuenta."
+        instrucciones: "Hemos enviado un email de verificación a tu correo. Por favor, revisa tu bandeja de entrada y spam, luego haz clic en el enlace para activar tu cuenta.",
+        messageId: emailEnviado.messageId // Para debugging
       });
     } else {
       // Si falla el envío del email, eliminar el usuario creado
       await User.deleteOne({ _id: nuevoUsuario._id });
+      
+      console.error('❌ Error enviando email de verificación:', emailEnviado.error);
+      
       res.status(500).json({ 
-        error: "Error al enviar email de verificación. Por favor, intenta de nuevo.",
-        detalles: emailEnviado.error
+        error: "Error al enviar email de verificación",
+        codigo: "EMAIL_SEND_FAILED",
+        mensaje: "No pudimos enviar el email de verificación. Por favor, verifica tu conexión e intenta de nuevo.",
+        detalles: process.env.NODE_ENV === 'development' ? emailEnviado.error : undefined
       });
     }
 
@@ -870,8 +975,8 @@ router.get("/verify-email/:token", async (req, res) => {
   }
 });
 
-// 📧 RUTA PARA REENVIAR EMAIL DE VERIFICACIÓN MEJORADA - NUEVO
-router.post("/resend-verification", async (req, res) => {
+// 📧 REENVIAR VERIFICACIÓN CON MIDDLEWARE - ACTUALIZADO
+router.post("/resend-verification", verificarConfiguracionEmail, async (req, res) => {
   try {
     const { email } = req.body;
     
@@ -918,12 +1023,14 @@ router.post("/resend-verification", async (req, res) => {
       res.json({
         message: "Email de verificación reenviado exitosamente",
         email: email,
-        expiraEn: "24 horas"
+        expiraEn: "24 horas",
+        instrucciones: "Revisa tu bandeja de entrada y spam. El enlace expira en 24 horas."
       });
     } else {
       res.status(500).json({
         error: "Error al reenviar email de verificación",
-        codigo: "EMAIL_SEND_FAILED"
+        codigo: "EMAIL_SEND_FAILED",
+        detalles: process.env.NODE_ENV === 'development' ? emailEnviado.error : undefined
       });
     }
 
@@ -981,6 +1088,35 @@ router.post("/login", async (req, res) => {
   } catch (error) {
     console.error("Error en login:", error);
     res.status(500).json({ error: "Error en el servidor" });
+  }
+});
+
+// 📧 ENDPOINT PARA VERIFICAR ESTADO DEL SERVICIO DE EMAIL - NUEVO
+router.get("/email/status", verifyToken, isAdmin, (req, res) => {
+  const status = {
+    configured: !!transporter,
+    emailUser: process.env.EMAIL_USER || 'No configurado',
+    hasEmailPass: !!(process.env.EMAIL_PASS && process.env.EMAIL_PASS !== 'tu-password-de-aplicacion'),
+    service: 'Gmail'
+  };
+
+  if (status.configured) {
+    res.json({
+      status: 'Configurado correctamente',
+      ...status,
+      message: 'El servicio de email está listo para usar'
+    });
+  } else {
+    res.status(500).json({
+      status: 'No configurado',
+      ...status,
+      error: 'El servicio de email no está configurado correctamente',
+      instrucciones: [
+        '1. Configura EMAIL_USER en .env con tu email de Gmail',
+        '2. Configura EMAIL_PASS en .env con una contraseña de aplicación',
+        '3. Reinicia el servidor'
+      ]
+    });
   }
 });
 
@@ -2422,6 +2558,7 @@ app.listen(PORT, () => {
   console.log("   • Verificar Email: GET /api/verify-email/:token");
   console.log("   • Reenviar Verificación: POST /api/resend-verification");
   console.log("   • Login: POST /api/login (📧 VERIFICA EMAIL)");
+  console.log("   • Estado Email: GET /api/email/status (ADMIN)");
   console.log("   • Actualizar Perfil: PUT /api/usuarios/perfil");
   console.log("   • Mascotas: GET/POST /api/mascotas");
   console.log("   • Citas: GET/POST /api/citas");
@@ -2443,6 +2580,10 @@ app.listen(PORT, () => {
   console.log("   • Login bloqueado hasta verificar email");
   console.log("   • Rate limiting: 1 email por minuto por dirección");
   console.log("   • Limpieza automática de tokens expirados cada hora");
+  console.log("   • Middleware de verificación en rutas críticas");
+  console.log("   • Endpoint de estado del servicio para admin");
   console.log(`📧 URLs configuradas: Frontend=${FRONTEND_URL}, Backend=${BACKEND_URL}`);
+  console.log("⚠️  IMPORTANTE: Configura EMAIL_USER y EMAIL_PASS en .env");
+  console.log("📧 EMAIL_PASS debe ser una contraseña de aplicación de Gmail (16 caracteres)");
   console.log("=======================================🚀");
 });

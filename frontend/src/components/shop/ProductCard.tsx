@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Product } from '../../hooks/useProducts';
 import { useCart } from '../../contexts/CartContext';
 
@@ -8,8 +9,12 @@ interface ProductCardProps {
 
 const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const { dispatch } = useCart();
+  const navigate = useNavigate();
 
-  const handleAddToCart = () => {
+  const handleAddToCart = (e: React.MouseEvent) => {
+    // Prevenir que se dispare la navegación al hacer clic en el botón
+    e.stopPropagation();
+    
     // Agregar el producto completo al carrito (debe cumplir con el tipo Product)
     dispatch({ type: 'ADD_TO_CART', payload: product });
 
@@ -19,6 +24,18 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       button.classList.add('animate-pulse');
       setTimeout(() => button.classList.remove('animate-pulse'), 600);
     }
+  };
+
+  const handleCardClick = () => {
+    // Navegar a la página de detalles del producto
+    navigate(`/productos/${product._id}`);
+  };
+
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    // Prevenir navegación al hacer clic en favoritos
+    e.stopPropagation();
+    // Aquí puedes agregar la lógica de favoritos más tarde
+    console.log('Producto agregado/removido de favoritos:', product.nombre);
   };
 
   // Formateador para pesos colombianos
@@ -76,7 +93,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const features = getFeatures();
 
   return (
-    <div className="group bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-500 overflow-hidden transform hover:-translate-y-2 border border-gray-100 relative">
+    <div 
+      onClick={handleCardClick}
+      className="group bg-white rounded-3xl shadow-lg hover:shadow-2xl transition-all duration-500 overflow-hidden transform hover:-translate-y-2 border border-gray-100 relative cursor-pointer"
+    >
       
       {/* IMAGEN DEL PRODUCTO */}
       <div className="relative overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100">
@@ -134,11 +154,21 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
         )}
 
         {/* FAVORITO */}
-        <button className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-white hover:scale-110">
+        <button 
+          onClick={handleFavoriteClick}
+          className="absolute top-4 right-4 w-10 h-10 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-white hover:scale-110 z-10"
+        >
           <svg className="w-5 h-5 text-gray-600 hover:text-red-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
           </svg>
         </button>
+
+        {/* BOTÓN VER DETALLES - Aparece en hover */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
+          <span className="bg-black/70 text-white px-4 py-2 rounded-full text-sm font-medium backdrop-blur-sm">
+            Ver detalles
+          </span>
+        </div>
       </div>
 
       {/* INFORMACIÓN DEL PRODUCTO */}
@@ -209,24 +239,39 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           </div>
         </div>
 
-        {/* BOTÓN */}
-        <button
-          id={`add-btn-${product._id}`}
-          onClick={handleAddToCart}
-          disabled={!isAvailable}
-          className={`w-full font-bold py-3 px-6 rounded-2xl transition-all duration-200 shadow-lg transform active:scale-[0.98] flex items-center justify-center space-x-2 ${
-            isAvailable
-              ? 'bg-lime-400 hover:bg-lime-500 text-black hover:shadow-xl hover:scale-[1.02]'
-              : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-          }`}
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 4H19m-10-4v6a2 2 0 104 0v-6m-4 0h4" />
-          </svg>
-          <span>
-            {!isAvailable ? 'No disponible' : 'Agregar al Carrito'}
-          </span>
-        </button>
+        {/* BOTONES DE ACCIÓN */}
+        <div className="flex space-x-2">
+          {/* BOTÓN VER DETALLES */}
+          <button
+            onClick={handleCardClick}
+            className="flex-1 font-medium py-3 px-4 rounded-2xl border-2 border-purple-200 text-purple-600 hover:bg-purple-50 hover:border-purple-300 transition-all duration-200 shadow-sm transform active:scale-[0.98] flex items-center justify-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            </svg>
+            <span className="hidden sm:inline">Ver más</span>
+          </button>
+
+          {/* BOTÓN AGREGAR AL CARRITO */}
+          <button
+            id={`add-btn-${product._id}`}
+            onClick={handleAddToCart}
+            disabled={!isAvailable}
+            className={`flex-1 font-bold py-3 px-4 rounded-2xl transition-all duration-200 shadow-lg transform active:scale-[0.98] flex items-center justify-center space-x-2 ${
+              isAvailable
+                ? 'bg-lime-400 hover:bg-lime-500 text-black hover:shadow-xl hover:scale-[1.02]'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4m0 0L7 13m0 0l-1.5 4H19m-10-4v6a2 2 0 104 0v-6m-4 0h4" />
+            </svg>
+            <span className="hidden sm:inline">
+              {!isAvailable ? 'No disponible' : 'Carrito'}
+            </span>
+          </button>
+        </div>
 
         {/* INFORMACIÓN ADICIONAL DE GARANTÍA */}
         {product.garantia?.tiene && product.garantia.descripcion && (
