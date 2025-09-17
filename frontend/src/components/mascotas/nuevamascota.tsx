@@ -82,6 +82,7 @@ const CrearMascota: React.FC = () => {
       const res = await fetch("http://localhost:5000/api/mascotas", {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+
         body: data,
       });
 
