@@ -16,10 +16,10 @@ import NuevaMascota from './components/mascotas/nuevamascota';
 import User from './components/user/Login';
 import Registro from './components/user/Register';
 import Home from './components/user/Home';
-import Edit from './components/mascotas/editarinfo'
-import Prefil from './components/user/prefil'
+import Edit from './components/mascotas/editarinfo';
+import Prefil from './components/user/prefil';
 import Grejisto from './components/user/GRegistration';
-import Detalles from './components/shop/ProductDetail';
+import ProductDetail from './components/shop/ProductDetail';
 
 // Nuevos componentes de verificación de email
 import EmailVerificationPending from './components/user/EmailVerificationPending';
@@ -81,7 +81,7 @@ function App() {
               <Route path="/mascotas" element={<MascotaPage />} />
               <Route path="/edit/:idMascota" element={<Edit />} />
               <Route path="/perfil" element={<Prefil />} />
-              <Route path="/product/:id" element={<Detalles />} />
+              <Route path="/product/:id" element={<ProductDetail />} />
               
               {/* 👇 Aquí ya no pasamos idMascota manual */}
               <Route path="/mascota/:idMascota" element={<Maxinfo />} />

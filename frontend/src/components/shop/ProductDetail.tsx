@@ -1,26 +1,62 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Product } from '../../hooks/useProducts';
+import { Product, BackendProduct } from '../../types/Product';
 import { useCart } from '../../contexts/CartContext';
 
-const ProductDetail = () => {
-  const { id } = useParams();
+const BASE_URL = "http://localhost:5000";
+
+const ProductDetail: React.FC = () => {
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { dispatch } = useCart();
+  
   const [product, setProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [quantity, setQuantity] = useState(1);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number>(0);
+  const [quantity, setQuantity] = useState<number>(1);
 
   // Fetch del producto
   useEffect(() => {
     const fetchProduct = async () => {
+      if (!id) {
+        setError('ID de producto no válido');
+        setLoading(false);
+        return;
+      }
+
       try {
-        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/productos/${id}`);
-        if (!response.ok) throw new Error('Producto no encontrado');
+        const token = localStorage.getItem("token");
+
+        const headers: HeadersInit = {
+          "Content-Type": "application/json",
+        };
+
+        if (token) {
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        const response = await fetch(`${BASE_URL}/api/productos/${id}`, {
+          headers,
+        });
         
-        const productData = await response.json();
+        if (!response.ok) {
+          throw new Error('Producto no encontrado');
+        }
+        
+        const backendData: BackendProduct = await response.json();
+        
+        // Normalizar el producto individual
+        const productData: Product = {
+          ...backendData,
+          id: backendData._id,
+          name: backendData.nombre,
+          description: backendData.descripcion,
+          price: backendData.precio,
+          category: backendData.categoria,
+          image: backendData.imagen,
+        };
+        
         setProduct(productData);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Error al cargar el producto');
@@ -29,11 +65,11 @@ const ProductDetail = () => {
       }
     };
 
-    if (id) fetchProduct();
+    fetchProduct();
   }, [id]);
 
   // Formateador para pesos colombianos
-  const formatCOP = (value) =>
+  const formatCOP = (value: number): string =>
     new Intl.NumberFormat("es-CO", {
       style: "currency",
       currency: "COP",
@@ -41,8 +77,8 @@ const ProductDetail = () => {
     }).format(value);
 
   // Mapear categorías a español
-  const getCategoryLabel = (categoria) => {
-    const categoryMap = {
+  const getCategoryLabel = (categoria: string): string => {
+    const categoryMap: Record<string, string> = {
       'alimento': 'Alimento',
       'juguetes': 'Juguetes',
       'medicamentos': 'Medicamentos',
@@ -57,7 +93,14 @@ const ProductDetail = () => {
     if (!product) return;
     
     for (let i = 0; i < quantity; i++) {
-      dispatch({ type: 'ADD_TO_CART', payload: product });
+      dispatch({ 
+        type: 'ADD_TO_CART', 
+        payload: { 
+          ...product, 
+          image: product.image ?? 'https://via.placeholder.com/600?text=Producto',
+          imagen: product.imagen ?? 'https://via.placeholder.com/600?text=Producto'
+        } 
+      });
     }
 
     // Mostrar confirmación visual
@@ -67,8 +110,10 @@ const ProductDetail = () => {
       button.textContent = '¡Agregado!';
       button.classList.add('bg-green-500', 'hover:bg-green-600');
       setTimeout(() => {
-        button.textContent = originalText;
-        button.classList.remove('bg-green-500', 'hover:bg-green-600');
+        if (button.textContent === '¡Agregado!') {
+          button.textContent = originalText;
+          button.classList.remove('bg-green-500', 'hover:bg-green-600');
+        }
       }, 2000);
     }
   };
@@ -76,6 +121,11 @@ const ProductDetail = () => {
   const handleBuyNow = () => {
     handleAddToCart();
     navigate('/cart');
+  };
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const target = e.target as HTMLImageElement;
+    target.src = 'https://via.placeholder.com/600?text=Producto';
   };
 
   if (loading) {
@@ -94,7 +144,7 @@ const ProductDetail = () => {
             {error || 'Producto no encontrado'}
           </h2>
           <button
-            onClick={() => navigate('/productos')}
+            onClick={() => navigate('/products')}
             className="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors"
           >
             Ver todos los productos
@@ -105,7 +155,7 @@ const ProductDetail = () => {
   }
 
   const isAvailable = product.activo && product.stock > 0;
-  const images = [product.imagen || 'https://via.placeholder.com/600?text=Producto'];
+  const images: string[] = [product.imagen || 'https://via.placeholder.com/600?text=Producto'];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -117,7 +167,7 @@ const ProductDetail = () => {
               Inicio
             </button>
             <span className="mx-2">›</span>
-            <button onClick={() => navigate('/productos')} className="hover:text-purple-600">
+            <button onClick={() => navigate('/products')} className="hover:text-purple-600">
               Productos
             </button>
             <span className="mx-2">›</span>
@@ -139,18 +189,13 @@ const ProductDetail = () => {
                     src={images[selectedImageIndex]}
                     alt={product.nombre}
                     className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const target = e.target;
-                      if (target instanceof HTMLImageElement) {
-                        target.src = 'https://via.placeholder.com/600?text=Producto';
-                      }
-                    }}
+                    onError={handleImageError}
                   />
                 </div>
 
                 {/* Thumbnails (si hubiera múltiples imágenes) */}
                 <div className="flex space-x-2">
-                  {images.map((img, index) => (
+                  {images.map((img: string, index: number) => (
                     <button
                       key={index}
                       onClick={() => setSelectedImageIndex(index)}
@@ -164,6 +209,7 @@ const ProductDetail = () => {
                         src={img}
                         alt={`${product.nombre} ${index + 1}`}
                         className="w-full h-full object-cover"
+                        onError={handleImageError}
                       />
                     </button>
                   ))}
@@ -201,7 +247,7 @@ const ProductDetail = () => {
               {/* Rating */}
               <div className="flex items-center space-x-2 mb-6">
                 <div className="flex space-x-1">
-                  {[...Array(5)].map((_, i) => (
+                  {[...Array(5)].map((_, i: number) => (
                     <svg key={i} className="w-5 h-5 text-yellow-400 fill-current" viewBox="0 0 20 20">
                       <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"/>
                     </svg>
@@ -217,9 +263,6 @@ const ProductDetail = () => {
                 </div>
                 <div className="text-green-600 font-medium">
                   {product.envioGratis ? 'Llega gratis mañana' : 'Envío disponible'}
-                </div>
-                <div className="text-sm text-gray-500">
-                  Comprando dentro de las próximas 8 h 39 min
                 </div>
               </div>
 
@@ -315,15 +358,6 @@ const ProductDetail = () => {
                     </div>
                     <div className="text-sm text-gray-600">+10mil ventas</div>
                   </div>
-                  <div className="text-right">
-                    <div className="flex items-center space-x-1 text-yellow-500">
-                      <svg className="w-4 h-4 fill-current" viewBox="0 0 20 20">
-                        <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z"/>
-                      </svg>
-                      <span className="text-gray-600 text-sm">4.8</span>
-                    </div>
-                    <div className="text-xs text-gray-500">Vendedor confiable</div>
-                  </div>
                 </div>
               </div>
 
@@ -388,7 +422,7 @@ const ProductDetail = () => {
         {/* Botón para volver */}
         <div className="mt-8 text-center">
           <button
-            onClick={() => navigate('/productos')}
+            onClick={() => navigate('/products')}
             className="bg-purple-600 text-white px-8 py-3 rounded-xl font-medium hover:bg-purple-700 transition-colors"
           >
             ← Ver todos los productos

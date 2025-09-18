@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Product } from '../../hooks/useProducts';
+import { Product } from '../../hooks/useProducts'; // Cambiar a importar desde useProducts
 import { useCart } from '../../contexts/CartContext';
 
 interface ProductCardProps {
@@ -12,13 +12,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   const navigate = useNavigate();
 
   const handleAddToCart = (e: React.MouseEvent) => {
-    // Prevenir que se dispare la navegación al hacer clic en el botón
     e.stopPropagation();
-    
-    // Agregar el producto completo al carrito (debe cumplir con el tipo Product)
     dispatch({ type: 'ADD_TO_CART', payload: product });
 
-    // Animación sutil
     const button = document.getElementById(`add-btn-${product._id}`);
     if (button) {
       button.classList.add('animate-pulse');
@@ -27,18 +23,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
   };
 
   const handleCardClick = () => {
-    // Navegar a la página de detalles del producto
-    navigate(`/productos/${product._id}`);
+    navigate(`/product/${product._id}`);
   };
 
   const handleFavoriteClick = (e: React.MouseEvent) => {
-    // Prevenir navegación al hacer clic en favoritos
     e.stopPropagation();
-    // Aquí puedes agregar la lógica de favoritos más tarde
     console.log('Producto agregado/removido de favoritos:', product.nombre);
   };
 
-  // Formateador para pesos colombianos
   const formatCOP = (value: number) =>
     new Intl.NumberFormat("es-CO", {
       style: "currency",
@@ -46,7 +38,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
       minimumFractionDigits: 0,
     }).format(value);
 
-  // Mapear categorías a español
   const getCategoryLabel = (categoria: string) => {
     const categoryMap: Record<string, string> = {
       'alimento': 'Alimento',
@@ -59,10 +50,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
     return categoryMap[categoria] || categoria;
   };
 
-  // Verificar si el producto está disponible
   const isAvailable = product.activo && product.stock > 0;
 
-  // Generar características dinámicas basadas en los datos reales
   const getFeatures = () => {
     const features = [];
     

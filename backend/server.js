@@ -203,8 +203,9 @@ const connectDB = async () => {
 connectDB();
 
 /* ======================
-   MODELOS ACTUALIZADOS CON VERIFICACIÓN DE EMAIL
+   MODELOS ACTUALIZADOS CON VERIFICACIÓN DE EMAIL Y CARRITO
    ====================== */
+
 // ESQUEMA DE USUARIO ACTUALIZADO CON TELÉFONO, DIRECCIÓN, GOOGLE OAUTH Y VERIFICACIÓN EMAIL
 const userSchema = new mongoose.Schema(
   {
@@ -254,6 +255,77 @@ userSchema.pre('save', function(next) {
 });
 
 const User = mongoose.model("User", userSchema);
+
+// 🛒 ESQUEMA DE CARRITO - NUEVO MODELO PARA PERSISTENCIA
+const CartItemSchema = new mongoose.Schema({
+  productId: {
+    type: String,
+    required: true,
+  },
+  name: {
+    type: String,
+    required: true,
+  },
+  price: {
+    type: Number,
+    required: true,
+  },
+  quantity: {
+    type: Number,
+    required: true,
+    min: 1,
+  },
+  image: {
+    type: String,
+  },
+  category: {
+    type: String,
+    required: true,
+  },
+  stock: {
+    type: Number,
+  },
+});
+
+const CartSchema = new mongoose.Schema({
+  userId: {
+    type: String,
+    required: true,
+    unique: true, // Un carrito por usuario
+    index: true,
+  },
+  items: [CartItemSchema],
+  total: {
+    type: Number,
+    default: 0,
+  },
+  itemCount: {
+    type: Number,
+    default: 0,
+  },
+  lastUpdated: {
+    type: Date,
+    default: Date.now,
+  },
+}, {
+  timestamps: true,
+});
+
+// Middleware para calcular totales antes de guardar
+CartSchema.pre('save', function(next) {
+  this.total = this.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  this.itemCount = this.items.reduce((sum, item) => sum + item.quantity, 0);
+  this.lastUpdated = new Date();
+  next();
+});
+
+// Método para limpiar items con cantidad 0
+CartSchema.methods.cleanupItems = function() {
+  this.items = this.items.filter(item => item.quantity > 0);
+  return this;
+};
+
+const Cart = mongoose.model('Cart', CartSchema);
 
 const mascotaSchema = new mongoose.Schema(
   {
@@ -709,6 +781,7 @@ const plantillaEmailVerificacion = (nombre, tokenVerificacion) => {
                     <li>Agendar citas veterinarias</li>
                     <li>Acceder a nuestros productos</li>
                     <li>Gestionar tu perfil</li>
+                    <li>Guardar tu carrito de compras</li>
                 </ul>
             </div>
             
@@ -801,6 +874,238 @@ const verifyGoogleToken = async (token) => {
     throw new Error('Token de Google inválido');
   }
 };
+
+/* ======================
+   🛒 RUTAS DEL CARRITO - NUEVAS RUTAS PARA PERSISTENCIA
+   ====================== */
+
+// GET /api/cart/:userId - Obtener carrito del usuario
+router.get("/cart/:userId", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Verificar que el usuario solo pueda acceder a su propio carrito
+    if (req.user.id !== userId) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
+    let cart = await Cart.findOne({ userId });
+    
+    if (!cart) {
+      // Si no existe carrito, crear uno vacío
+      cart = new Cart({ userId, items: [] });
+      await cart.save();
+    }
+
+    // Limpiar items expirados o inválidos si es necesario
+    cart.cleanupItems();
+    
+    res.json({
+      items: cart.items.map(item => ({
+        id: item.productId,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity,
+        image: item.image,
+        category: item.category,
+        stock: item.stock,
+      })),
+      total: cart.total,
+      itemCount: cart.itemCount,
+    });
+  } catch (error) {
+    console.error('Error getting cart:', error);
+    res.status(500).json({ message: 'Error del servidor', error: error.message });
+  }
+});
+
+// POST /api/cart - Guardar/actualizar carrito del usuario
+router.post("/cart", verifyToken, async (req, res) => {
+  try {
+    const { userId, items } = req.body;
+    
+    // Verificar que el usuario solo pueda actualizar su propio carrito
+    if (req.user.id !== userId) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
+    // Validar items
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ message: 'Items debe ser un array' });
+    }
+
+    // Convertir items al formato del modelo
+    const cartItems = items.map(item => ({
+      productId: item.id,
+      name: item.name,
+      price: item.price,
+      quantity: item.quantity,
+      image: item.image,
+      category: item.category,
+      stock: item.stock,
+    }));
+
+    // Buscar carrito existente o crear uno nuevo
+    let cart = await Cart.findOne({ userId });
+    
+    if (cart) {
+      cart.items = cartItems;
+    } else {
+      cart = new Cart({ userId, items: cartItems });
+    }
+
+    // Limpiar items y guardar
+    cart.cleanupItems();
+    await cart.save();
+
+    res.json({
+      message: 'Carrito actualizado exitosamente',
+      total: cart.total,
+      itemCount: cart.itemCount,
+    });
+  } catch (error) {
+    console.error('Error saving cart:', error);
+    res.status(500).json({ message: 'Error del servidor', error: error.message });
+  }
+});
+
+// DELETE /api/cart/:userId - Limpiar carrito del usuario
+router.delete("/cart/:userId", verifyToken, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Verificar que el usuario solo pueda limpiar su propio carrito
+    if (req.user.id !== userId) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
+    await Cart.findOneAndUpdate(
+      { userId },
+      { items: [], total: 0, itemCount: 0, lastUpdated: new Date() },
+      { upsert: true }
+    );
+
+    res.json({ message: 'Carrito limpiado exitosamente' });
+  } catch (error) {
+    console.error('Error clearing cart:', error);
+    res.status(500).json({ message: 'Error del servidor', error: error.message });
+  }
+});
+
+// PUT /api/cart/item - Agregar un item específico
+router.put("/cart/item", verifyToken, async (req, res) => {
+  try {
+    const { userId, item } = req.body;
+    
+    if (req.user.id !== userId) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
+    let cart = await Cart.findOne({ userId });
+    if (!cart) {
+      cart = new Cart({ userId, items: [] });
+    }
+
+    const existingItemIndex = cart.items.findIndex(
+      cartItem => cartItem.productId === item.id
+    );
+
+    if (existingItemIndex > -1) {
+      // Actualizar cantidad si el item ya existe
+      cart.items[existingItemIndex].quantity += item.quantity || 1;
+    } else {
+      // Agregar nuevo item
+      cart.items.push({
+        productId: item.id,
+        name: item.name,
+        price: item.price,
+        quantity: item.quantity || 1,
+        image: item.image,
+        category: item.category,
+        stock: item.stock,
+      });
+    }
+
+    cart.cleanupItems();
+    await cart.save();
+
+    res.json({
+      message: 'Item agregado al carrito',
+      total: cart.total,
+      itemCount: cart.itemCount,
+    });
+  } catch (error) {
+    console.error('Error adding item to cart:', error);
+    res.status(500).json({ message: 'Error del servidor', error: error.message });
+  }
+});
+
+// DELETE /api/cart/item/:userId/:productId - Eliminar item específico
+router.delete("/cart/item/:userId/:productId", verifyToken, async (req, res) => {
+  try {
+    const { userId, productId } = req.params;
+    
+    if (req.user.id !== userId) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
+    const cart = await Cart.findOne({ userId });
+    if (!cart) {
+      return res.status(404).json({ message: 'Carrito no encontrado' });
+    }
+
+    cart.items = cart.items.filter(item => item.productId !== productId);
+    await cart.save();
+
+    res.json({
+      message: 'Item eliminado del carrito',
+      total: cart.total,
+      itemCount: cart.itemCount,
+    });
+  } catch (error) {
+    console.error('Error removing item from cart:', error);
+    res.status(500).json({ message: 'Error del servidor', error: error.message });
+  }
+});
+
+// PUT /api/cart/quantity - Actualizar cantidad de un item
+router.put("/cart/quantity", verifyToken, async (req, res) => {
+  try {
+    const { userId, productId, quantity } = req.body;
+    
+    if (req.user.id !== userId) {
+      return res.status(403).json({ message: 'Acceso denegado' });
+    }
+
+    const cart = await Cart.findOne({ userId });
+    if (!cart) {
+      return res.status(404).json({ message: 'Carrito no encontrado' });
+    }
+
+    const itemIndex = cart.items.findIndex(item => item.productId === productId);
+    if (itemIndex === -1) {
+      return res.status(404).json({ message: 'Item no encontrado en el carrito' });
+    }
+
+    if (quantity <= 0) {
+      cart.items.splice(itemIndex, 1);
+    } else {
+      cart.items[itemIndex].quantity = quantity;
+    }
+
+    cart.cleanupItems();
+    await cart.save();
+
+    res.json({
+      message: 'Cantidad actualizada',
+      total: cart.total,
+      itemCount: cart.itemCount,
+    });
+  } catch (error) {
+    console.error('Error updating item quantity:', error);
+    res.status(500).json({ message: 'Error del servidor', error: error.message });
+  }
+});
 
 /* ======================
    📧 RUTAS DE AUTENTICACIÓN ACTUALIZADAS CON VERIFICACIÓN EMAIL
@@ -1985,11 +2290,12 @@ router.delete("/citas/:id", verifyToken, async (req, res) => {
    ====================== */
 router.get("/admin/dashboard", verifyToken, isAdmin, async (req, res) => {
   try {
-    const [totalUsuarios, totalProductos, totalMascotas, totalCitas] = await Promise.all([
+    const [totalUsuarios, totalProductos, totalMascotas, totalCitas, totalCarritos] = await Promise.all([
       User.countDocuments(),
       Producto.countDocuments(),
       Mascota.countDocuments(),
       Cita.countDocuments(),
+      Cart.countDocuments(),
     ]);
 
     // Estadísticas adicionales de citas
@@ -2014,16 +2320,36 @@ router.get("/admin/dashboard", verifyToken, isAdmin, async (req, res) => {
     const productosConGarantia = await Producto.countDocuments({ "garantia.tiene": true });
     const productosEnvioGratis = await Producto.countDocuments({ envioGratis: true });
 
+    // Estadísticas de carritos
+    const carritoStats = await Cart.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalItems: { $sum: "$itemCount" },
+          valorTotal: { $sum: "$total" },
+          promedioItems: { $avg: "$itemCount" },
+          promedioValor: { $avg: "$total" }
+        }
+      }
+    ]);
+
     res.json({ 
       totalUsuarios, 
       totalProductos, 
       totalMascotas, 
       totalCitas,
+      totalCarritos,
       citasPorEstado,
       citasHoy,
       productosConDescuento,
       productosConGarantia,
-      productosEnvioGratis
+      productosEnvioGratis,
+      carritoStats: carritoStats[0] || {
+        totalItems: 0,
+        valorTotal: 0,
+        promedioItems: 0,
+        promedioValor: 0
+      }
     });
   } catch (error) {
     console.error("Error en dashboard:", error);
@@ -2512,12 +2838,20 @@ router.get("/health", (req, res) => {
   console.log('🩺 Health check solicitado');
   res.json({ 
     ok: true, 
-    message: "🩺 Servidor veterinario funcionando correctamente con verificación de email",
+    message: "🩺 Servidor veterinario funcionando correctamente con verificación de email y carrito persistente",
     timestamp: new Date().toISOString(),
     mongodb: mongoose.connection.readyState === 1 ? 'Conectado' : 'Desconectado',
     emailService: transporter ? 'Configurado' : 'No configurado',
     frontendUrl: FRONTEND_URL,
-    backendUrl: BACKEND_URL
+    backendUrl: BACKEND_URL,
+    features: [
+      '📧 Verificación de email',
+      '🛒 Carrito persistente',
+      '🐾 Gestión de mascotas',
+      '📅 Sistema de citas',
+      '📦 Catálogo de productos',
+      '🔐 Autenticación Google OAuth'
+    ]
   });
 });
 
@@ -2566,6 +2900,16 @@ app.listen(PORT, () => {
   console.log("   • Admin Dashboard: GET /api/admin/dashboard");
   console.log("   • Productos: GET/POST/PUT/DELETE /api/productos");
   console.log("   • Categorías: GET /api/productos/categorias/disponibles");
+  console.log("🛒 SISTEMA DE CARRITO PERSISTENTE ACTIVADO:");
+  console.log("   • Obtener carrito: GET /api/cart/:userId");
+  console.log("   • Guardar carrito: POST /api/cart");
+  console.log("   • Limpiar carrito: DELETE /api/cart/:userId");
+  console.log("   • Agregar item: PUT /api/cart/item");
+  console.log("   • Eliminar item: DELETE /api/cart/item/:userId/:productId");
+  console.log("   • Actualizar cantidad: PUT /api/cart/quantity");
+  console.log("   • Carritos se guardan automáticamente para usuarios registrados");
+  console.log("   • Carritos se borran para usuarios no registrados");
+  console.log("   • Sincronización en tiempo real con frontend");
   console.log("🔐 Autenticación con Google configurada:");
   console.log("   • POST /api/auth/google - Autenticar con Google");
   console.log("   • POST /api/auth/google/link - Vincular cuenta Google");
@@ -2585,5 +2929,7 @@ app.listen(PORT, () => {
   console.log(`📧 URLs configuradas: Frontend=${FRONTEND_URL}, Backend=${BACKEND_URL}`);
   console.log("⚠️  IMPORTANTE: Configura EMAIL_USER y EMAIL_PASS en .env");
   console.log("📧 EMAIL_PASS debe ser una contraseña de aplicación de Gmail (16 caracteres)");
+  console.log("💾 MONGODB: Modelos actualizados con esquema de carrito persistente");
+  console.log("🔄 SINCRONIZACIÓN: Carrito se sincroniza automáticamente entre dispositivos");
   console.log("=======================================🚀");
 });
