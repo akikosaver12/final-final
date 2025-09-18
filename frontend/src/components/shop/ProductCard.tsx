@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Product } from '../../hooks/useProducts'; // Cambiar a importar desde useProducts
+import { Product } from '../../hooks/useProducts'; 
 import { useCart } from '../../contexts/CartContext';
 
 interface ProductCardProps {
@@ -8,17 +8,21 @@ interface ProductCardProps {
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
-  const { dispatch } = useCart();
+  const { addToCart } = useCart(); // Usar la función addToCart en lugar de dispatch
   const navigate = useNavigate();
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.stopPropagation();
-    dispatch({ type: 'ADD_TO_CART', payload: product });
-
-    const button = document.getElementById(`add-btn-${product._id}`);
-    if (button) {
-      button.classList.add('animate-pulse');
-      setTimeout(() => button.classList.remove('animate-pulse'), 600);
+    
+    // Usar addToCart que maneja la verificación de autenticación
+    const success = addToCart(product);
+    
+    if (success) {
+      const button = document.getElementById(`add-btn-${product._id}`);
+      if (button) {
+        button.classList.add('animate-pulse');
+        setTimeout(() => button.classList.remove('animate-pulse'), 600);
+      }
     }
   };
 

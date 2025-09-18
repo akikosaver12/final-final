@@ -11,34 +11,37 @@ interface CartState {
   items: CartItem[];
   total: number;
   itemCount: number;
+  isUserLoggedIn: boolean;
+  userId: string | null;
 }
 
 // Acciones que puede hacer el carrito
 type CartAction =
+  | { type: 'SET_USER'; payload: { userId: string | null; isLoggedIn: boolean } }
   | { type: 'ADD_TO_CART'; payload: Product }
   | { type: 'REMOVE_FROM_CART'; payload: string }
   | { type: 'UPDATE_QUANTITY'; payload: { id: string; quantity: number } }
   | { type: 'CLEAR_CART' }
   | { type: 'LOAD_CART'; payload: CartState }
-  | { type: 'LOGOUT_CLEAR' }; // Nueva acción para limpiar al cerrar sesión
+  | { type: 'LOGOUT_CLEAR' };
 
-// Claves para localStorage
-const CART_STORAGE_KEY = 'veterinary_cart';
-const USER_SESSION_KEY = 'user_session'; // Para detectar cambios de sesión
-// Asegúrate de que este valor coincida exactamente con el nombre de la clave usada en tu sistema de autenticación
+// Función para obtener la clave del localStorage específica del usuario
+const getUserCartKey = (userId: string) => `veterinary_cart_${userId}`;
 
-// Funciones para localStorage
-const saveCartToStorage = (cartState: CartState) => {
+// Funciones para localStorage por usuario
+const saveCartToStorage = (userId: string, cartState: CartState) => {
+  if (!userId) return;
   try {
-    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cartState));
+    localStorage.setItem(getUserCartKey(userId), JSON.stringify(cartState));
   } catch (error) {
     console.error('Error guardando carrito en localStorage:', error);
   }
 };
 
-const loadCartFromStorage = (): CartState | null => {
+const loadCartFromStorage = (userId: string): CartState | null => {
+  if (!userId) return null;
   try {
-    const savedCart = localStorage.getItem(CART_STORAGE_KEY);
+    const savedCart = localStorage.getItem(getUserCartKey(userId));
     if (savedCart) {
       const parsedCart = JSON.parse(savedCart);
       if (parsedCart.items && Array.isArray(parsedCart.items)) {
@@ -51,83 +54,94 @@ const loadCartFromStorage = (): CartState | null => {
   return null;
 };
 
-const clearCartFromStorage = () => {
+const clearCartFromStorage = (userId: string) => {
+  if (!userId) return;
   try {
-    localStorage.removeItem(CART_STORAGE_KEY);
+    localStorage.removeItem(getUserCartKey(userId));
   } catch (error) {
     console.error('Error limpiando carrito de localStorage:', error);
   }
 };
 
-// Funciones para detectar cambios de sesión
-const getCurrentUserId = (): string | null => {
+// Función para verificar si hay usuario autenticado
+const isUserAuthenticated = (): { isLoggedIn: boolean; userId: string | null } => {
   try {
-    const userSession = localStorage.getItem(USER_SESSION_KEY);
-    return userSession ? JSON.parse(userSession).userId : null;
-  } catch (error) {
-    return null;
-  }
-};
-
-const saveCurrentUserId = (userId: string | null) => {
-  try {
-    if (userId) {
-      localStorage.setItem(USER_SESSION_KEY, JSON.stringify({ userId }));
-    } else {
-      localStorage.removeItem(USER_SESSION_KEY);
+    const rawUser = localStorage.getItem('user');
+    if (rawUser) {
+      const user = JSON.parse(rawUser);
+      const userId = user?.id || user?._id || user?.username;
+      return {
+        isLoggedIn: !!userId,
+        userId: userId || null
+      };
     }
-  } catch (error) {
-    console.error('Error guardando sesión de usuario:', error);
-  }
-};
-
-const isUserAuthenticated = (): boolean => {
-  try {
-    // Verifica múltiples fuentes de autenticación
-    const userSession = localStorage.getItem(USER_SESSION_KEY);
-    // Si tu sistema usa otro nombre de clave para la sesión, cámbialo aquí
-    const authToken = localStorage.getItem('auth_token');
-    const accessToken = localStorage.getItem('access_token');
-    const userInfo = localStorage.getItem('user_info');
-    
-    // Si existe cualquiera de estos, considera que hay usuario autenticado
-    // Puedes ajustar la lógica según tu flujo real de autenticación
-    return Boolean(userSession && JSON.parse(userSession)?.userId)
-      || !!authToken
-      || !!accessToken
-      || !!userInfo;
+    return { isLoggedIn: false, userId: null };
   } catch (error) {
     console.error('Error verificando autenticación:', error);
-    return false;
+    return { isLoggedIn: false, userId: null };
   }
 };
-
 
 // Crear el contexto
 interface CartContextType {
   state: CartState;
   dispatch: React.Dispatch<CartAction>;
-  addToCart: (product: Product) => void;
+  addToCart: (product: Product) => boolean;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
   handleUserLogout: () => void;
   handleUserLogin: (userId: string) => void;
-  isAuthenticated: boolean; // Nueva propiedad para saber el estado
+  isAuthenticated: boolean;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 // Reducer
 const cartReducer = (state: CartState, action: CartAction): CartState => {
+  let newItems: CartItem[];
+  let newState: CartState;
+
   switch (action.type) {
+    case 'SET_USER':
+      if (!action.payload.isLoggedIn || !action.payload.userId) {
+        // Si no hay usuario, limpiar carrito
+        return {
+          items: [],
+          total: 0,
+          itemCount: 0,
+          isUserLoggedIn: false,
+          userId: null,
+        };
+      } else {
+        // Si hay usuario, cargar su carrito
+        const userCart = loadCartFromStorage(action.payload.userId);
+        if (userCart) {
+          return {
+            ...userCart,
+            isUserLoggedIn: true,
+            userId: action.payload.userId,
+          };
+        }
+        return {
+          items: [],
+          total: 0,
+          itemCount: 0,
+          isUserLoggedIn: true,
+          userId: action.payload.userId,
+        };
+      }
+
     case 'ADD_TO_CART': {
-      const existingItem = state.items.find(item => item.id === action.payload.id);
-      let newItems: CartItem[];
+      if (!state.isUserLoggedIn || !state.userId) {
+        return state; // No hacer nada si no hay usuario logueado
+      }
+
+      const existingItem = state.items.find(item => item._id === action.payload._id);
 
       if (existingItem) {
         newItems = state.items.map(item =>
-          item.id === action.payload.id
+          item._id === action.payload._id
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
@@ -135,44 +149,85 @@ const cartReducer = (state: CartState, action: CartAction): CartState => {
         newItems = [...state.items, { ...action.payload, quantity: 1 }];
       }
 
-      return {
+      newState = {
         ...state,
         items: newItems,
-        total: newItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+        total: newItems.reduce((sum, item) => sum + item.precio * item.quantity, 0),
         itemCount: newItems.reduce((sum, item) => sum + item.quantity, 0),
       };
+
+      // Guardar en localStorage
+      if (state.userId) {
+        saveCartToStorage(state.userId, newState);
+      }
+
+      return newState;
     }
 
     case 'REMOVE_FROM_CART': {
-      const newItems = state.items.filter(item => item.id !== action.payload);
-      return {
+      if (!state.isUserLoggedIn || !state.userId) {
+        return state;
+      }
+
+      newItems = state.items.filter(item => item._id !== action.payload);
+      newState = {
         ...state,
         items: newItems,
-        total: newItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+        total: newItems.reduce((sum, item) => sum + item.precio * item.quantity, 0),
         itemCount: newItems.reduce((sum, item) => sum + item.quantity, 0),
       };
+
+      // Guardar en localStorage
+      if (state.userId) {
+        saveCartToStorage(state.userId, newState);
+      }
+
+      return newState;
     }
 
     case 'UPDATE_QUANTITY': {
-      const newItems = state.items
+      if (!state.isUserLoggedIn || !state.userId) {
+        return state;
+      }
+
+      newItems = state.items
         .map(item =>
-          item.id === action.payload.id
+          item._id === action.payload.id
             ? { ...item, quantity: Math.max(0, action.payload.quantity) }
             : item
         )
         .filter(item => item.quantity > 0);
 
-      return {
+      newState = {
         ...state,
         items: newItems,
-        total: newItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
+        total: newItems.reduce((sum, item) => sum + item.precio * item.quantity, 0),
         itemCount: newItems.reduce((sum, item) => sum + item.quantity, 0),
       };
+
+      // Guardar en localStorage
+      if (state.userId) {
+        saveCartToStorage(state.userId, newState);
+      }
+
+      return newState;
     }
 
     case 'CLEAR_CART':
     case 'LOGOUT_CLEAR':
-      return { items: [], total: 0, itemCount: 0 };
+      newState = {
+        ...state,
+        items: [],
+        total: 0,
+        itemCount: 0,
+      };
+
+      // Limpiar localStorage si hay userId
+      if (state.userId) {
+        clearCartFromStorage(state.userId);
+      }
+
+      return newState;
 
     case 'LOAD_CART':
       return action.payload;
@@ -187,6 +242,8 @@ const initialState: CartState = {
   items: [],
   total: 0,
   itemCount: 0,
+  isUserLoggedIn: false,
+  userId: null,
 };
 
 // Proveedor del contexto con detección automática de usuario
@@ -194,136 +251,107 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [state, dispatch] = useReducer(cartReducer, initialState);
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(false);
 
-  // NUEVA FUNCIONALIDAD: Verificar autenticación al montar y periódicamente
+  // Verificar autenticación y sincronizar usuario
   useEffect(() => {
-    const checkAuthentication = () => {
-      const authStatus = isUserAuthenticated();
-      setIsAuthenticated(authStatus);
+    const checkAndSyncUser = () => {
+      const { isLoggedIn, userId } = isUserAuthenticated();
+      setIsAuthenticated(isLoggedIn);
       
-      // Si no hay usuario autenticado, limpiar carrito
-      if (!authStatus && (state.items.length > 0 || state.total > 0)) {
-        dispatch({ type: 'LOGOUT_CLEAR' });
-        clearCartFromStorage();
+      // Solo sincronizar si el estado cambió
+      if (state.isUserLoggedIn !== isLoggedIn || state.userId !== userId) {
+        dispatch({ 
+          type: 'SET_USER', 
+          payload: { userId, isLoggedIn } 
+        });
       }
     };
 
     // Verificar inmediatamente
-    checkAuthentication();
+    checkAndSyncUser();
 
-    // Verificar cada 5 segundos para detectar cambios de autenticación
-    const authCheckInterval = setInterval(checkAuthentication, 5000);
+    // Verificar cada 2 segundos
+    const authCheckInterval = setInterval(checkAndSyncUser, 2000);
 
     return () => clearInterval(authCheckInterval);
-  }, [state.items.length, state.total]);
+  }, [state.isUserLoggedIn, state.userId]);
 
-  // Cargar carrito al montar el componente (SOLO si hay usuario autenticado)
+  // Detectar cambios en el localStorage desde otras pestañas/ventanas
   useEffect(() => {
-    if (isAuthenticated) {
-      const savedCart = loadCartFromStorage();
-      if (savedCart && savedCart.items.length > 0) {
-        dispatch({ type: 'LOAD_CART', payload: savedCart });
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'user') {
+        const { isLoggedIn, userId } = isUserAuthenticated();
+        setIsAuthenticated(isLoggedIn);
+        dispatch({ 
+          type: 'SET_USER', 
+          payload: { userId, isLoggedIn } 
+        });
       }
-    }
-  }, [isAuthenticated]);
+    };
 
-  // Guardar carrito cada vez que cambie el estado (SOLO si hay usuario autenticado)
-  useEffect(() => {
-    if (isAuthenticated) {
-      if (state.items.length > 0 || state.total > 0) {
-        saveCartToStorage(state);
-      } else {
-        clearCartFromStorage();
-      }
-    }
-  }, [state, isAuthenticated]);
+    // Escuchar evento personalizado para cambios en la misma pestaña
+    const handleCustomStorageChange = () => {
+      const { isLoggedIn, userId } = isUserAuthenticated();
+      setIsAuthenticated(isLoggedIn);
+      dispatch({ 
+        type: 'SET_USER', 
+        payload: { userId, isLoggedIn } 
+      });
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('userChanged', handleCustomStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('userChanged', handleCustomStorageChange);
+    };
+  }, []);
 
   // Funciones auxiliares con verificación de autenticación
-  const addToCart = (product: Product) => {
-    if (isAuthenticated) {
+  const addToCart = (product: Product): boolean => {
+    if (isAuthenticated && state.isUserLoggedIn) {
       dispatch({ type: 'ADD_TO_CART', payload: product });
+      return true;
     } else {
-      console.warn('Usuario no autenticado: no se puede agregar al carrito');
+      alert('Debes iniciar sesión para agregar productos al carrito');
+      return false;
     }
   };
 
   const removeFromCart = (id: string) => {
-    if (isAuthenticated) {
+    if (isAuthenticated && state.isUserLoggedIn) {
       dispatch({ type: 'REMOVE_FROM_CART', payload: id });
-    } else {
-      console.warn('Usuario no autenticado: no se puede eliminar del carrito');
     }
   };
 
   const updateQuantity = (id: string, quantity: number) => {
-    if (isAuthenticated) {
+    if (isAuthenticated && state.isUserLoggedIn) {
       if (quantity <= 0) {
         removeFromCart(id);
       } else {
         dispatch({ type: 'UPDATE_QUANTITY', payload: { id, quantity } });
       }
-    } else {
-      console.warn('Usuario no autenticado: no se puede actualizar cantidad');
     }
   };
 
   const clearCart = () => {
     dispatch({ type: 'CLEAR_CART' });
-    if (isAuthenticated) {
-      clearCartFromStorage();
-    }
   };
 
   // Función para manejar cierre de sesión
   const handleUserLogout = () => {
     dispatch({ type: 'LOGOUT_CLEAR' });
-    clearCartFromStorage();
-    saveCurrentUserId(null);
     setIsAuthenticated(false);
   };
 
   // Función para manejar inicio de sesión
   const handleUserLogin = (userId: string) => {
-    const previousUserId = getCurrentUserId();
-    
-    // Si es un usuario diferente, limpiar el carrito
-    if (previousUserId && previousUserId !== userId) {
-      dispatch({ type: 'LOGOUT_CLEAR' });
-      clearCartFromStorage();
-    }
-    
-    saveCurrentUserId(userId);
+    dispatch({ 
+      type: 'SET_USER', 
+      payload: { userId, isLoggedIn: true } 
+    });
     setIsAuthenticated(true);
   };
-
-  // Detectar cambios en el localStorage desde otras pestañas/ventanas
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-      // Lista de claves que pueden indicar cambios de autenticación
-      const authKeys = [
-        'user_session', 'session', 'auth_token', 'access_token', 'authToken',
-        'token', 'jwt', 'user', 'user_info', 'currentUser', 'loggedIn', 
-        'isAuthenticated', 'userId', 'userToken'
-      ];
-      
-      // Si cambió alguna clave de autenticación
-      if (authKeys.includes(e.key || '')) {
-        console.log(`🔄 Cambio detectado en clave de autenticación: "${e.key}"`);
-        
-        const newAuthStatus = isUserAuthenticated();
-        setIsAuthenticated(newAuthStatus);
-        
-        // Si se eliminó la sesión (logout desde otra pestaña)
-        if (!newAuthStatus) {
-          console.log('🧹 Limpiando carrito por cierre de sesión detectado');
-          dispatch({ type: 'LOGOUT_CLEAR' });
-          clearCartFromStorage();
-        }
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, []);
 
   const value: CartContextType = {
     state,
@@ -362,17 +390,17 @@ export const useCartItemCount = (): number => {
 // Hook para verificar si un producto está en el carrito
 export const useIsInCart = (productId: string): boolean => {
   const { state } = useCart();
-  return state.items.some(item => item.id === productId);
+  return state.items.some(item => item._id === productId);
 };
 
 // Hook para obtener la cantidad de un producto específico
 export const useProductQuantity = (productId: string): number => {
   const { state } = useCart();
-  const item = state.items.find(item => item.id === productId);
+  const item = state.items.find(item => item._id === productId);
   return item ? item.quantity : 0;
 };
 
-// NUEVO HOOK: Para verificar si el usuario está autenticado
+// Hook para verificar si el usuario está autenticado
 export const useIsAuthenticated = (): boolean => {
   const { isAuthenticated } = useCart();
   return isAuthenticated;

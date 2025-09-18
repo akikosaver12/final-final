@@ -46,7 +46,59 @@ const CartPage: React.FC = () => {
     }
   };
 
-  // CARRITO VACÍO
+  // SI NO HAY USUARIO LOGUEADO
+  if (!cartState.isUserLoggedIn) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-20">
+        <div className="container mx-auto px-6">
+          <div className="max-w-md mx-auto text-center">
+            {/* ILUSTRACIÓN DE LOGIN REQUERIDO */}
+            <div className="relative mb-8">
+              <div className="w-32 h-32 mx-auto bg-gradient-to-br from-blue-100 to-purple-200 rounded-3xl flex items-center justify-center shadow-xl">
+                <div className="text-6xl text-blue-500">🔒</div>
+              </div>
+              {/* Elementos flotantes */}
+              <div className="absolute -top-2 -right-2 w-8 h-8 bg-lime-400 rounded-full flex items-center justify-center animate-bounce">
+                <span className="text-lg">🛒</span>
+              </div>
+            </div>
+            
+            <h1 className="text-3xl font-bold text-gray-900 mb-4">
+              Inicia sesión para usar tu carrito
+            </h1>
+            <p className="text-gray-600 mb-8 leading-relaxed">
+              Para agregar productos a tu carrito y mantener tus compras guardadas, 
+              necesitas tener una cuenta activa. ¡Es rápido y fácil!
+            </p>
+            
+            {/* BOTONES */}
+            <div className="space-y-4">
+              <Link 
+                to="/login" 
+                className="block w-full bg-lime-400 hover:bg-lime-500 text-black font-bold py-4 px-6 rounded-2xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+              >
+                🔑 Iniciar Sesión
+              </Link>
+              <Link 
+                to="/products" 
+                className="block w-full bg-white border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-semibold py-4 px-6 rounded-2xl transition-all duration-200"
+              >
+                🛍️ Ver Productos
+              </Link>
+              <Link 
+                to="/" 
+                className="block w-full text-gray-500 hover:text-gray-700 font-medium py-2 transition-colors"
+              >
+                🏠 Volver al Inicio
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // CARRITO VACÍO (PERO CON USUARIO LOGUEADO)
   if (cartState.items.length === 0) {
     return (
       <div className="min-h-screen bg-gray-50 py-20">
