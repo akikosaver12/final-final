@@ -195,6 +195,13 @@ const connectDB = async () => {
       serverSelectionTimeoutMS: 5000,
     });
     console.log("✅ Conectado a MongoDB Atlas");
+    
+    // 🤖 INICIAR EL SISTEMA AUTOMÁTICO DESPUÉS DE CONECTAR A LA BD
+    console.log("🤖 Iniciando sistema automático de gestión de citas...");
+    setTimeout(() => {
+      iniciarSistemaAutomatico();
+    }, 3000); // Esperar 3 segundos para asegurar que todo esté listo
+    
   } catch (err) {
     console.error("❌ Error al conectar MongoDB:", err.message);
     process.exit(1);
@@ -478,6 +485,237 @@ const citaSchema = new mongoose.Schema(
 citaSchema.index({ fecha: 1, hora: 1 }, { unique: true });
 
 const Cita = mongoose.model("Cita", citaSchema);
+
+/* ======================
+   🤖 SISTEMA AUTOMÁTICO DE GESTIÓN DE CITAS
+   ====================== */
+
+// Función para actualizar estados de citas vencidas
+const actualizarCitasVencidas = async () => {
+  try {
+    const ahora = new Date();
+    console.log('🔄 Iniciando actualización de citas vencidas...');
+
+    // Construir fecha actual para comparar solo fechas (sin tiempo)
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    
+    // Para citas de hoy, verificar también la hora
+    const ahoraHora = new Date().toTimeString().substring(0, 5); // formato HH:MM
+
+    const result = await Cita.updateMany(
+      {
+        $and: [
+          { estado: { $in: ['pendiente', 'confirmada'] } },
+          {
+            $or: [
+              // Citas de días anteriores
+              { fecha: { $lt: hoy } },
+              // Citas de hoy pero con hora pasada
+              {
+                $and: [
+                  { fecha: { $gte: hoy } },
+                  { fecha: { $lt: new Date(hoy.getTime() + 24*60*60*1000) } },
+                  { hora: { $lt: ahoraHora } }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        $set: { estado: 'completada' },
+        $currentDate: { updatedAt: true }
+      }
+    );
+
+    if (result.modifiedCount > 0) {
+      console.log(`✅ ${result.modifiedCount} citas actualizadas a estado "completada"`);
+    } else {
+      console.log('ℹ️ No hay citas vencidas para actualizar');
+    }
+
+    return result;
+  } catch (error) {
+    console.error('❌ Error actualizando citas vencidas:', error);
+    return null;
+  }
+};
+
+// Función para eliminar citas antiguas (más de 3 días)
+const eliminarCitasAntiguas = async () => {
+  try {
+    const fechaLimite = new Date();
+    fechaLimite.setDate(fechaLimite.getDate() - 3); // 3 días atrás
+    fechaLimite.setHours(23, 59, 59, 999); // Final del día hace 3 días
+    
+    console.log('🗑️ Iniciando eliminación de citas antiguas...');
+    console.log('📅 Eliminando citas anteriores a:', fechaLimite.toLocaleDateString());
+
+    // Encontrar citas para eliminar (completadas y canceladas)
+    const citasParaEliminar = await Cita.find({
+      fecha: { $lt: fechaLimite },
+      estado: { $in: ['completada', 'cancelada'] }
+    }).populate('mascota', 'nombre').populate('usuario', 'name email');
+
+    if (citasParaEliminar.length > 0) {
+      console.log('📋 Citas que serán eliminadas:');
+      citasParaEliminar.forEach(cita => {
+        console.log(`  - ${cita.mascota?.nombre || 'Mascota'} (${cita.usuario?.name}) - ${cita.fecha.toLocaleDateString()} - ${cita.estado}`);
+      });
+
+      // Eliminar las citas
+      const result = await Cita.deleteMany({
+        fecha: { $lt: fechaLimite },
+        estado: { $in: ['completada', 'cancelada'] }
+      });
+
+      console.log(`✅ ${result.deletedCount} citas eliminadas exitosamente`);
+      return result;
+    } else {
+      console.log('ℹ️ No hay citas antiguas para eliminar');
+      return { deletedCount: 0 };
+    }
+
+  } catch (error) {
+    console.error('❌ Error eliminando citas antiguas:', error);
+    return null;
+  }
+};
+
+// Función principal de mantenimiento
+const ejecutarMantenimientoCitas = async () => {
+  console.log('🤖 === INICIANDO MANTENIMIENTO AUTOMÁTICO DE CITAS ===');
+  console.log('🕐 Timestamp:', new Date().toLocaleString());
+
+  try {
+    // 1. Actualizar estados de citas vencidas
+    const resultadoActualizacion = await actualizarCitasVencidas();
+    
+    // 2. Eliminar citas antiguas
+    const resultadoEliminacion = await eliminarCitasAntiguas();
+
+    // 3. Mostrar resumen
+    console.log('📊 === RESUMEN DEL MANTENIMIENTO ===');
+    console.log(`📝 Citas actualizadas: ${resultadoActualizacion?.modifiedCount || 0}`);
+    console.log(`🗑️ Citas eliminadas: ${resultadoEliminacion?.deletedCount || 0}`);
+    console.log('✅ Mantenimiento completado exitosamente');
+    console.log('==========================================');
+
+    return {
+      success: true,
+      citasActualizadas: resultadoActualizacion?.modifiedCount || 0,
+      citasEliminadas: resultadoEliminacion?.deletedCount || 0,
+      timestamp: new Date()
+    };
+
+  } catch (error) {
+    console.error('❌ Error en mantenimiento de citas:', error);
+    return {
+      success: false,
+      error: error.message,
+      timestamp: new Date()
+    };
+  }
+};
+
+// Función para obtener estadísticas de citas
+const obtenerEstadisticasCitas = async () => {
+  try {
+    const ahora = new Date();
+    const hace3Dias = new Date();
+    hace3Dias.setDate(hace3Dias.getDate() - 3);
+
+    const stats = await Cita.aggregate([
+      {
+        $facet: {
+          porEstado: [
+            {
+              $group: {
+                _id: '$estado',
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          vencidas: [
+            {
+              $match: {
+                fecha: { $lt: ahora },
+                estado: { $in: ['pendiente', 'confirmada'] }
+              }
+            },
+            {
+              $count: 'total'
+            }
+          ],
+          elegiblesEliminacion: [
+            {
+              $match: {
+                fecha: { $lt: hace3Dias },
+                estado: { $in: ['completada', 'cancelada'] }
+              }
+            },
+            {
+              $count: 'total'
+            }
+          ],
+          total: [
+            {
+              $count: 'total'
+            }
+          ]
+        }
+      }
+    ]);
+
+    return {
+      porEstado: stats[0].porEstado,
+      citasVencidas: stats[0].vencidas[0]?.total || 0,
+      elegiblesEliminacion: stats[0].elegiblesEliminacion[0]?.total || 0,
+      totalCitas: stats[0].total[0]?.total || 0,
+      timestamp: new Date()
+    };
+
+  } catch (error) {
+    console.error('Error obteniendo estadísticas:', error);
+    return null;
+  }
+};
+
+/* ======================
+   ⏰ CONFIGURACIÓN DEL SISTEMA AUTOMÁTICO
+   ====================== */
+
+// Ejecutar mantenimiento cada 2 horas (más frecuente para mejor actualización)
+const INTERVALO_MANTENIMIENTO = 2 * 60 * 60 * 1000; // 2 horas
+
+let intervalId = null;
+
+// Iniciar el sistema automático
+const iniciarSistemaAutomatico = () => {
+  console.log('🚀 Iniciando sistema automático de gestión de citas...');
+  console.log(`⏰ Configurado para ejecutarse cada ${INTERVALO_MANTENIMIENTO / (60 * 60 * 1000)} horas`);
+  
+  // Ejecutar una vez al iniciar (después de 30 segundos para dar tiempo al servidor)
+  setTimeout(() => {
+    console.log('🔄 Ejecutando mantenimiento inicial...');
+    ejecutarMantenimientoCitas();
+  }, 30000);
+  
+  // Programar ejecuciones periódicas
+  intervalId = setInterval(ejecutarMantenimientoCitas, INTERVALO_MANTENIMIENTO);
+  
+  console.log('✅ Sistema automático iniciado exitosamente');
+};
+
+// Detener el sistema automático
+const detenerSistemaAutomatico = () => {
+  if (intervalId) {
+    clearInterval(intervalId);
+    intervalId = null;
+    console.log('🛑 Sistema automático detenido');
+  }
+};
 
 /* ======================
    Middlewares de Auth
@@ -2286,6 +2524,91 @@ router.delete("/citas/:id", verifyToken, async (req, res) => {
 });
 
 /* ======================
+   📡 RUTAS DE API PARA MANTENIMIENTO AUTOMÁTICO DE CITAS
+   ====================== */
+
+// Ruta para ejecutar mantenimiento manual (solo admin)
+router.post("/admin/citas/mantenimiento", verifyToken, isAdmin, async (req, res) => {
+  try {
+    console.log('🔧 Mantenimiento manual solicitado por admin:', req.user.id);
+    const resultado = await ejecutarMantenimientoCitas();
+    
+    res.json({
+      message: 'Mantenimiento ejecutado exitosamente',
+      ...resultado
+    });
+    
+  } catch (error) {
+    console.error('Error en mantenimiento manual:', error);
+    res.status(500).json({ 
+      error: 'Error ejecutando mantenimiento',
+      details: error.message 
+    });
+  }
+});
+
+// Ruta para obtener estadísticas de mantenimiento (solo admin)
+router.get("/admin/citas/estadisticas-mantenimiento", verifyToken, isAdmin, async (req, res) => {
+  try {
+    const estadisticas = await obtenerEstadisticasCitas();
+    
+    if (estadisticas) {
+      res.json(estadisticas);
+    } else {
+      res.status(500).json({ error: 'Error obteniendo estadísticas' });
+    }
+    
+  } catch (error) {
+    console.error('Error obteniendo estadísticas:', error);
+    res.status(500).json({ error: 'Error al obtener estadísticas' });
+  }
+});
+
+// Ruta para obtener configuración del sistema automático (solo admin)
+router.get("/admin/citas/config-automatico", verifyToken, isAdmin, (req, res) => {
+  res.json({
+    activo: intervalId !== null,
+    intervaloPorHoras: INTERVALO_MANTENIMIENTO / (60 * 60 * 1000),
+    proximaEjecucion: intervalId ? 'Cada ' + (INTERVALO_MANTENIMIENTO / (60 * 60 * 1000)) + ' horas' : 'Sistema detenido',
+    configuracion: {
+      diasParaEliminacion: 3,
+      estadosParaActualizar: ['pendiente', 'confirmada'],
+      estadosParaEliminar: ['completada', 'cancelada']
+    },
+    ultimoMantenimiento: 'Ver logs del servidor'
+  });
+});
+
+// Ruta para controlar el sistema automático (solo admin)
+router.post("/admin/citas/toggle-automatico", verifyToken, isAdmin, (req, res) => {
+  try {
+    const { accion } = req.body; // 'iniciar' o 'detener'
+    
+    if (accion === 'iniciar') {
+      if (intervalId) {
+        return res.json({ message: 'El sistema ya está activo', activo: true });
+      }
+      iniciarSistemaAutomatico();
+      res.json({ message: 'Sistema automático iniciado', activo: true });
+      
+    } else if (accion === 'detener') {
+      if (!intervalId) {
+        return res.json({ message: 'El sistema ya está detenido', activo: false });
+      }
+      detenerSistemaAutomatico();
+      res.json({ message: 'Sistema automático detenido', activo: false });
+      
+    } else {
+      res.status(400).json({ error: 'Acción inválida. Use "iniciar" o "detener"' });
+    }
+    
+  } catch (error) {
+    console.error('Error controlando sistema automático:', error);
+    res.status(500).json({ error: 'Error al controlar sistema automático' });
+  }
+});
+
+/* ======================
    Dashboard Admin
    ====================== */
 router.get("/admin/dashboard", verifyToken, isAdmin, async (req, res) => {
@@ -2838,10 +3161,11 @@ router.get("/health", (req, res) => {
   console.log('🩺 Health check solicitado');
   res.json({ 
     ok: true, 
-    message: "🩺 Servidor veterinario funcionando correctamente con verificación de email y carrito persistente",
+    message: "🩺 Servidor veterinario funcionando correctamente con verificación de email, carrito persistente y sistema automático de citas",
     timestamp: new Date().toISOString(),
     mongodb: mongoose.connection.readyState === 1 ? 'Conectado' : 'Desconectado',
     emailService: transporter ? 'Configurado' : 'No configurado',
+    sistemaAutomaticoCitas: intervalId ? 'Activo' : 'Inactivo',
     frontendUrl: FRONTEND_URL,
     backendUrl: BACKEND_URL,
     features: [
@@ -2849,6 +3173,7 @@ router.get("/health", (req, res) => {
       '🛒 Carrito persistente',
       '🐾 Gestión de mascotas',
       '📅 Sistema de citas',
+      '🤖 Gestión automática de citas',
       '📦 Catálogo de productos',
       '🔐 Autenticación Google OAuth'
     ]
@@ -2878,8 +3203,21 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Manejar cierre graceful del servidor
+process.on('SIGINT', () => {
+  console.log('\n🛑 Recibida señal SIGINT. Cerrando servidor...');
+  detenerSistemaAutomatico();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  console.log('\n🛑 Recibida señal SIGTERM. Cerrando servidor...');
+  detenerSistemaAutomatico();
+  process.exit(0);
+});
+
 /* ======================
-   📧 Servidor - ACTUALIZADO
+   📧 Servidor - ACTUALIZADO CON SISTEMA AUTOMÁTICO
    ====================== */
 app.listen(PORT, () => {
   console.log("🚀=======================================");
@@ -2929,6 +3267,18 @@ app.listen(PORT, () => {
   console.log(`📧 URLs configuradas: Frontend=${FRONTEND_URL}, Backend=${BACKEND_URL}`);
   console.log("⚠️  IMPORTANTE: Configura EMAIL_USER y EMAIL_PASS en .env");
   console.log("📧 EMAIL_PASS debe ser una contraseña de aplicación de Gmail (16 caracteres)");
+  console.log("🤖 SISTEMA AUTOMÁTICO DE CITAS CONFIGURADO:");
+  console.log("   • Actualización automática de estados cada 2 horas");
+  console.log("   • Eliminación de citas antiguas (>3 días)");
+  console.log("   • Endpoints de administración:");
+  console.log("     - POST /api/admin/citas/mantenimiento - Ejecutar manual");
+  console.log("     - GET /api/admin/citas/estadisticas-mantenimiento - Ver stats");
+  console.log("     - GET /api/admin/citas/config-automatico - Ver config");
+  console.log("     - POST /api/admin/citas/toggle-automatico - Controlar sistema");
+  console.log("   • Estados automáticos:");
+  console.log("     - pendiente/confirmada → completada (al pasar fecha/hora)");
+  console.log("     - completada/cancelada → eliminadas (después de 3 días)");
+  console.log("   • Logs detallados en consola del servidor");
   console.log("💾 MONGODB: Modelos actualizados con esquema de carrito persistente");
   console.log("🔄 SINCRONIZACIÓN: Carrito se sincroniza automáticamente entre dispositivos");
   console.log("=======================================🚀");
