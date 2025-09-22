@@ -723,7 +723,7 @@ const detenerSistemaAutomatico = () => {
 const verifyToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   if (!authHeader)
-    return res.status(401).json({ error: "Acceso denegado: falta Authorization" });
+    return res.status(401).json({ error: "Acceso denegado: Debes iniciar sesion primero" });
 
   try {
     const token = authHeader.split(" ")[1];
@@ -733,7 +733,7 @@ const verifyToken = (req, res, next) => {
     req.user = decoded;
     next();
   } catch (error) {
-    return res.status(403).json({ error: "Token inválido" });
+    return res.status(403).json({ error: "Debes iniciar sesion primero" });
   }
 };
 
