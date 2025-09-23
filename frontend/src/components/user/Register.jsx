@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
-// CONSTANTES MEJORADAS - Variables de entorno con fallbacks
-const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || "503963971592-17vo21di0tjf249341l4ocscemath5p0.apps.googleusercontent.com";
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
+// CONSTANTES CORREGIDAS
+const GOOGLE_CLIENT_ID = "503963971592-17vo21di0tjf249341l4ocscemath5p0.apps.googleusercontent.com";
+const API_URL = "http://localhost:5000/api";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -116,49 +116,9 @@ const Register = () => {
     }
   }, [navigate]);
 
-  // Cargar Google Sign-In Script - CORREGIDO con mejor manejo
+  // Cargar Google Sign-In Script - MEJORADO
   useEffect(() => {
     let scriptElement = null;
-
-    const initializeGoogleSignIn = () => {
-      if (window.google && window.google.accounts) {
-        try {
-          window.google.accounts.id.initialize({
-            client_id: GOOGLE_CLIENT_ID,
-            callback: handleGoogleSignIn,
-            auto_select: false,
-            cancel_on_tap_outside: true,
-            ux_mode: 'popup',
-            context: 'signup',
-            use_fedcm_for_prompt: false
-          });
-          
-          console.log('✅ Google Sign-In inicializado correctamente');
-          setGoogleInitialized(true);
-          
-          // Pre-renderizar botón como respaldo
-          setTimeout(() => {
-            const fallbackDiv = document.getElementById('google-signin-button-fallback');
-            if (fallbackDiv && window.google) {
-              try {
-                window.google.accounts.id.renderButton(fallbackDiv, {
-                  theme: 'outline',
-                  size: 'large',
-                  text: 'signup_with',
-                  width: '100%'
-                });
-              } catch (e) {
-                console.warn('Error renderizando botón de respaldo:', e);
-              }
-            }
-          }, 100);
-          
-        } catch (error) {
-          console.error('❌ Error inicializando Google Sign-In:', error);
-          setGoogleInitialized(false);
-        }
-      }
-    };
 
     const loadGoogleScript = () => {
       // Verificar si ya existe el script
@@ -166,7 +126,6 @@ const Register = () => {
       if (existingScript) {
         console.log('✅ Script de Google ya existe');
         if (window.google) {
-          setGoogleScriptLoaded(true);
           initializeGoogleSignIn();
         }
         return;
@@ -174,7 +133,6 @@ const Register = () => {
 
       if (window.google) {
         console.log('✅ Google GSI ya cargado');
-        setGoogleScriptLoaded(true);
         initializeGoogleSignIn();
         return;
       }
@@ -187,21 +145,67 @@ const Register = () => {
       
       scriptElement.onload = () => {
         console.log('✅ Google GSI script cargado');
-        setGoogleScriptLoaded(true);
         initializeGoogleSignIn();
       };
       
       scriptElement.onerror = (error) => {
         console.error('❌ Error cargando Google GSI:', error);
-        setGoogleScriptLoaded(false);
       };
       
       document.head.appendChild(scriptElement);
     };
 
+    const initializeGoogleSignIn = () => {
+      if (window.google && window.google.accounts) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleGoogleSignIn,
+            auto_select: false,
+            cancel_on_tap_outside: true,
+            // CONFIGURACIÓN CORREGIDA para desarrollo local
+            ux_mode: 'popup',
+            context: 'signup',
+            // Deshabilitar FedCM que está causando problemas
+            use_fedcm_for_prompt: false,
+            // Configurar origen permitido
+            allowed_parent_origin: ["http://localhost:3000"]
+          });
+          
+          console.log('✅ Google Sign-In inicializado correctamente');
+          
+          // Renderizar botón de respaldo
+          setTimeout(() => {
+            const fallbackDiv = document.getElementById('google-signin-button-fallback');
+            if (fallbackDiv && window.google) {
+              try {
+                window.google.accounts.id.renderButton(fallbackDiv, {
+                  theme: 'outline',
+                  size: 'large',
+                  text: 'signup_with',
+                  width: '320',
+                  // CONFIGURACIÓN CORREGIDA del botón
+                  shape: 'rectangular',
+                  logo_alignment: 'left'
+                });
+                console.log('✅ Botón de respaldo renderizado');
+              } catch (e) {
+                console.warn('⚠️ Error renderizando botón de respaldo:', e);
+              }
+            }
+          }, 100);
+          
+        } catch (error) {
+          console.error('❌ Error inicializando Google Sign-In:', error);
+        }
+      } else {
+        console.error('❌ Google accounts no disponible');
+      }
+    };
+
     loadGoogleScript();
 
-    // Cleanup function
+    // Cleanup
     return () => {
       if (scriptElement && scriptElement.parentNode) {
         try {
@@ -420,42 +424,49 @@ const Register = () => {
     }
   }, [formData, validarFormulario, navigate]);
 
-  // Manejar click del botón de Google - MEJORADO
+  // MANEJAR CLICK DEL BOTÓN DE GOOGLE - CORREGIDO
   const handleGoogleButtonClick = useCallback(() => {
-    if (!googleScriptLoaded || !googleInitialized) {
-      alert("Google Sign-In aún no está disponible. Espera un momento o recarga la página.");
-      return;
-    }
-
     if (!window.google || !window.google.accounts) {
       alert("Google Sign-In no está disponible. Recarga la página.");
       return;
     }
 
     try {
+      // Intentar mostrar el prompt
       window.google.accounts.id.prompt((notification) => {
         console.log('Google prompt notification:', notification);
         
         if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
           console.warn('⚠️ Google prompt no disponible:', notification.getNotDisplayedReason());
           
+          // Mostrar botón de respaldo
           const buttonDiv = document.getElementById('google-signin-button-fallback');
           if (buttonDiv) {
+            buttonDiv.style.display = 'block';
             buttonDiv.classList.remove('hidden');
           } else {
-            alert('Por favor, recarga la página e intenta de nuevo con Google Sign-In.');
+            // Último recurso: crear botón dinámicamente
+            const container = document.getElementById('google-button-container');
+            if (container) {
+              const newDiv = document.createElement('div');
+              newDiv.id = 'dynamic-google-button';
+              container.appendChild(newDiv);
+              
+              window.google.accounts.id.renderButton(newDiv, {
+                theme: 'outline',
+                size: 'large',
+                text: 'signup_with',
+                width: '100%'
+              });
+            }
           }
         }
       });
     } catch (error) {
       console.error('❌ Error con Google prompt:', error);
-      
-      const buttonDiv = document.getElementById('google-signin-button-fallback');
-      if (buttonDiv) {
-        buttonDiv.classList.remove('hidden');
-      }
+      alert('Error con Google Sign-In. Por favor, recarga la página e intenta de nuevo.');
     }
-  }, [googleScriptLoaded, googleInitialized]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-indigo-100 py-8 px-4">
