@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
-// CONSTANTES CORREGIDAS
+// Configuración
 const GOOGLE_CLIENT_ID = "503963971592-17vo21di0tjf249341l4ocscemath5p0.apps.googleusercontent.com";
 const API_URL = "http://localhost:5000/api";
 
@@ -23,8 +23,7 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [errors, setErrors] = useState({});
-  const [googleScriptLoaded, setGoogleScriptLoaded] = useState(false);
-  const [googleInitialized, setGoogleInitialized] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
 
   // Debug info en desarrollo
   useEffect(() => {
@@ -35,7 +34,7 @@ const Register = () => {
     }
   }, []);
 
-  // Validaciones separadas para mejor rendimiento
+  // Validaciones mejoradas
   const validarTelefono = useCallback((telefono) => {
     if (!telefono) return false;
     const telefonoLimpio = telefono.replace(/[\s\-\(\)]/g, "");
@@ -52,12 +51,75 @@ const Register = () => {
     return nombre.trim().length >= 2 && /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/.test(nombre);
   }, []);
 
-  // Manejar registro con Google - MEJORADO con useCallback
-  const handleGoogleSignIn = useCallback(async (response) => {
+  const validarContrasena = useCallback((password) => {
+    if (!password) return { isValid: false, message: "La contraseña es requerida" };
+    if (password.length < 6) return { isValid: false, message: "La contraseña debe tener al menos 6 caracteres" };
+    if (password.length > 128) return { isValid: false, message: "La contraseña es demasiado larga" };
+    return { isValid: true };
+  }, []);
+
+  // Inicializar Google Sign-In
+  useEffect(() => {
+    const initializeGoogleSignIn = () => {
+      if (window.google && window.google.accounts) {
+        try {
+          window.google.accounts.id.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: handleGoogleSuccess,
+            auto_select: false,
+            cancel_on_tap_outside: true,
+            context: 'signup',
+            ux_mode: 'popup',
+            use_fedcm_for_prompt: false,
+            allowed_parent_origin: ["http://localhost:3000"]
+          });
+          
+          setGoogleReady(true);
+          console.log('✅ Google Sign-In inicializado correctamente');
+        } catch (error) {
+          console.error('❌ Error inicializando Google Sign-In:', error);
+          setGoogleReady(false);
+        }
+      }
+    };
+
+    const loadGoogleScript = () => {
+      if (window.google) {
+        initializeGoogleSignIn();
+        return;
+      }
+
+      if (document.querySelector('script[src*="accounts.google.com"]')) {
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      
+      script.onload = () => {
+        console.log('📜 Google script cargado');
+        initializeGoogleSignIn();
+      };
+      
+      script.onerror = (error) => {
+        console.error('❌ Error cargando Google script:', error);
+        setGoogleReady(false);
+      };
+      
+      document.head.appendChild(script);
+    };
+
+    loadGoogleScript();
+  }, []);
+
+  // Manejar Google Success
+  const handleGoogleSuccess = useCallback(async (credentialResponse) => {
     setGoogleLoading(true);
     
     try {
-      console.log("📧 Iniciando registro con Google...");
+      console.log('🔐 Procesando credenciales de Google...');
       
       const res = await fetch(`${API_URL}/auth/google`, {
         method: "POST",
@@ -65,159 +127,103 @@ const Register = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          credential: response.credential
+          credential: credentialResponse.credential
         }),
       });
 
       const data = await res.json();
-      console.log("📥 Respuesta Google OAuth:", {
-        ...data,
-        token: data.token ? '[TOKEN_PRIVADO]' : undefined,
-        credential: '[CREDENTIAL_PRIVADO]'
-      });
+      console.log('📥 Respuesta del servidor:', data);
 
       if (res.ok) {
         if (data.requiresAdditionalInfo) {
-          console.log("🆕 Usuario nuevo de Google, redirigiendo a completar registro...");
-          navigate("/gregistro", { 
+          // Usuario nuevo, necesita completar información
+          navigate("/google-complete-register", { 
             state: { 
               googleUser: data.googleUser,
-              credential: response.credential 
+              credential: credentialResponse.credential 
             }
           });
         } else {
-          localStorage.setItem("token", data.token);
+          // Usuario existente, login exitoso
+          localStorage.setItem("token", data.tokens.accessToken);
+          localStorage.setItem("refreshToken", data.tokens.refreshToken);
           localStorage.setItem("user", JSON.stringify(data.user));
-          console.log("✅ Login exitoso con Google para:", data.user?.email);
-          alert(data.message || "¡Bienvenido de nuevo!");
-          navigate(data.redirectTo || "/home");
+          alert(data.message || "¡Bienvenido!");
+          navigate(data.redirectTo || "/dashboard");
         }
       } else {
-        console.error("❌ Error en Google OAuth:", data);
+        console.error('❌ Error en Google OAuth:', data);
         
-        if (res.status === 401) {
+        if (data.code === 'INVALID_GOOGLE_TOKEN') {
           alert("❌ Token de Google inválido. Por favor, intenta de nuevo.");
-        } else if (res.status === 400 && data.error?.includes('email')) {
-          alert("❌ " + data.error);
+        } else if (data.code === 'GOOGLE_OAUTH_NOT_CONFIGURED') {
+          alert("❌ Google OAuth no está configurado en el servidor.");
         } else {
           alert("❌ " + (data.error || "Error al registrarse con Google"));
         }
       }
     } catch (error) {
-      console.error("💥 Error en registro con Google:", error);
+      console.error('💥 Error de conexión con Google:', error);
       
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        alert("❌ No se pudo conectar con el servidor para verificar con Google.");
+        alert("❌ No se pudo conectar con el servidor. Verifica que esté corriendo.");
       } else {
-        alert("❌ Error al conectar con Google. Intenta de nuevo.");
+        alert("❌ Error de conexión. Por favor, intenta de nuevo.");
       }
     } finally {
       setGoogleLoading(false);
     }
   }, [navigate]);
 
-  // Cargar Google Sign-In Script - MEJORADO
-  useEffect(() => {
-    let scriptElement = null;
+  // Manejar click del botón de Google
+  const handleGoogleButtonClick = useCallback(() => {
+    if (!googleReady || !window.google) {
+      alert("Google Sign-In no está listo. Por favor, recarga la página.");
+      return;
+    }
 
-    const loadGoogleScript = () => {
-      // Verificar si ya existe el script
-      const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
-      if (existingScript) {
-        console.log('✅ Script de Google ya existe');
-        if (window.google) {
-          initializeGoogleSignIn();
+    setGoogleLoading(true);
+    
+    try {
+      window.google.accounts.id.prompt((notification) => {
+        setGoogleLoading(false);
+        
+        if (notification.isNotDisplayed()) {
+          console.warn('Google prompt no mostrado:', notification.getNotDisplayedReason());
+          showGoogleButton();
+        } else if (notification.isSkippedMoment()) {
+          console.log('Google prompt saltado por el usuario');
         }
-        return;
-      }
+      });
+    } catch (error) {
+      setGoogleLoading(false);
+      console.error('❌ Error con Google prompt:', error);
+      showGoogleButton();
+    }
+  }, [googleReady]);
 
-      if (window.google) {
-        console.log('✅ Google GSI ya cargado');
-        initializeGoogleSignIn();
-        return;
-      }
+  // Mostrar botón de respaldo de Google
+  const showGoogleButton = () => {
+    const buttonContainer = document.getElementById('google-fallback-register');
+    if (buttonContainer && window.google) {
+      buttonContainer.innerHTML = '';
       
-      console.log('🔄 Cargando Google GSI...');
-      scriptElement = document.createElement('script');
-      scriptElement.src = 'https://accounts.google.com/gsi/client';
-      scriptElement.async = true;
-      scriptElement.defer = true;
-      
-      scriptElement.onload = () => {
-        console.log('✅ Google GSI script cargado');
-        initializeGoogleSignIn();
-      };
-      
-      scriptElement.onerror = (error) => {
-        console.error('❌ Error cargando Google GSI:', error);
-      };
-      
-      document.head.appendChild(scriptElement);
-    };
-
-    const initializeGoogleSignIn = () => {
-      if (window.google && window.google.accounts) {
-        try {
-          window.google.accounts.id.initialize({
-            client_id: GOOGLE_CLIENT_ID,
-            callback: handleGoogleSignIn,
-            auto_select: false,
-            cancel_on_tap_outside: true,
-            // CONFIGURACIÓN CORREGIDA para desarrollo local
-            ux_mode: 'popup',
-            context: 'signup',
-            // Deshabilitar FedCM que está causando problemas
-            use_fedcm_for_prompt: false,
-            // Configurar origen permitido
-            allowed_parent_origin: ["http://localhost:3000"]
-          });
-          
-          console.log('✅ Google Sign-In inicializado correctamente');
-          
-          // Renderizar botón de respaldo
-          setTimeout(() => {
-            const fallbackDiv = document.getElementById('google-signin-button-fallback');
-            if (fallbackDiv && window.google) {
-              try {
-                window.google.accounts.id.renderButton(fallbackDiv, {
-                  theme: 'outline',
-                  size: 'large',
-                  text: 'signup_with',
-                  width: '320',
-                  // CONFIGURACIÓN CORREGIDA del botón
-                  shape: 'rectangular',
-                  logo_alignment: 'left'
-                });
-                console.log('✅ Botón de respaldo renderizado');
-              } catch (e) {
-                console.warn('⚠️ Error renderizando botón de respaldo:', e);
-              }
-            }
-          }, 100);
-          
-        } catch (error) {
-          console.error('❌ Error inicializando Google Sign-In:', error);
-        }
-      } else {
-        console.error('❌ Google accounts no disponible');
+      try {
+        window.google.accounts.id.renderButton(buttonContainer, {
+          theme: 'outline',
+          size: 'large',
+          text: 'signup_with',
+          width: '100%',
+          shape: 'rectangular'
+        });
+        buttonContainer.style.display = 'block';
+      } catch (error) {
+        console.error('Error renderizando botón de respaldo:', error);
       }
-    };
+    }
+  };
 
-    loadGoogleScript();
-
-    // Cleanup
-    return () => {
-      if (scriptElement && scriptElement.parentNode) {
-        try {
-          scriptElement.parentNode.removeChild(scriptElement);
-        } catch (e) {
-          console.warn('Error removiendo script:', e);
-        }
-      }
-    };
-  }, [handleGoogleSignIn]);
-
-  // Manejar cambios en inputs normales - OPTIMIZADO
+  // Manejar cambios en inputs normales
   const handleChange = useCallback((e) => {
     const { name, value } = e.target;
 
@@ -236,7 +242,7 @@ const Register = () => {
       return prev;
     });
 
-    // Validaciones específicas en tiempo real con debounce implícito
+    // Validaciones en tiempo real con debounce
     if (value) {
       setTimeout(() => {
         if (name === 'email' && !validarEmail(value)) {
@@ -245,12 +251,17 @@ const Register = () => {
           setErrors(prev => ({ ...prev, name: 'El nombre solo debe contener letras y espacios' }));
         } else if (name === 'telefono' && !validarTelefono(value)) {
           setErrors(prev => ({ ...prev, telefono: 'Formato de teléfono inválido' }));
+        } else if (name === 'password') {
+          const passwordValidation = validarContrasena(value);
+          if (!passwordValidation.isValid) {
+            setErrors(prev => ({ ...prev, password: passwordValidation.message }));
+          }
         }
-      }, 500); // Debounce de 500ms
+      }, 500);
     }
-  }, [validarEmail, validarNombre, validarTelefono]);
+  }, [validarEmail, validarNombre, validarTelefono, validarContrasena]);
 
-  // Manejar cambios en campos de dirección - OPTIMIZADO
+  // Manejar cambios en campos de dirección
   const handleDireccionChange = useCallback((e) => {
     const { name, value } = e.target;
 
@@ -274,7 +285,7 @@ const Register = () => {
     });
   }, []);
 
-  // Validar formulario MEJORADO
+  // Validar formulario completo
   const validarFormulario = useCallback(() => {
     const nuevosErrores = {};
 
@@ -290,12 +301,9 @@ const Register = () => {
       nuevosErrores.email = "El email debe tener un formato válido";
     }
 
-    if (!formData.password) {
-      nuevosErrores.password = "La contraseña es obligatoria";
-    } else if (formData.password.length < 6) {
-      nuevosErrores.password = "La contraseña debe tener al menos 6 caracteres";
-    } else if (formData.password.length > 128) {
-      nuevosErrores.password = "La contraseña es demasiado larga (máx. 128 caracteres)";
+    const passwordValidation = validarContrasena(formData.password);
+    if (!passwordValidation.isValid) {
+      nuevosErrores.password = passwordValidation.message;
     }
 
     if (!formData.telefono.trim()) {
@@ -323,9 +331,9 @@ const Register = () => {
     }
 
     return nuevosErrores;
-  }, [formData, validarNombre, validarEmail, validarTelefono]);
+  }, [formData, validarNombre, validarEmail, validarTelefono, validarContrasena]);
 
-  // Manejar el registro tradicional - MEJORADO con mejor manejo de errores
+  // Manejar el registro tradicional
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
 
@@ -347,9 +355,8 @@ const Register = () => {
     try {
       console.log("📤 Enviando datos al servidor...");
       
-      // Timeout para la petición
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
 
       const res = await fetch(`${API_URL}/register`, {
         method: "POST",
@@ -371,11 +378,11 @@ const Register = () => {
       if (res.ok) {
         console.log("✅ Registro exitoso!");
         
-        if (data.requiereVerificacion) {
+        if (data.requiresVerification) {
           navigate("/verificacion-pendiente", { 
             state: { 
               email: data.email,
-              mensaje: data.instrucciones 
+              mensaje: data.instructions 
             }
           });
         } else {
@@ -386,25 +393,29 @@ const Register = () => {
         console.log("❌ Error en el registro:", data);
         
         if (res.status === 400) {
-          if (data.campos) {
+          if (data.code === 'INVALID_EMAIL') {
+            setErrors({ email: data.error });
+          } else if (data.code === 'INVALID_PHONE') {
+            setErrors({ telefono: data.error });
+          } else if (data.code === 'INVALID_PASSWORD') {
+            setErrors({ password: data.error });
+          } else if (data.code === 'INVALID_ADDRESS') {
+            setErrors({ 'direccion.calle': data.error });
+          } else if (data.code === 'MISSING_REQUIRED_FIELDS' && data.campos) {
             const erroresServidor = {};
             data.campos.forEach((campo) => {
               erroresServidor[campo] = `${campo} es requerido`;
             });
             setErrors(erroresServidor);
-          } else if (data.error) {
-            if (data.error.includes('email')) {
-              setErrors({ email: data.error });
-            } else if (data.error.includes('teléfono') || data.error.includes('telefono')) {
-              setErrors({ telefono: data.error });
-            } else if (data.error.includes('dirección') || data.error.includes('direccion')) {
-              setErrors({ 'direccion.calle': data.error });
-            } else {
-              alert("❌ " + data.error);
-            }
+          } else {
+            alert("❌ " + (data.error || "Error en el registro"));
           }
         } else if (res.status === 500) {
-          alert("❌ Error interno del servidor. Por favor, intenta de nuevo más tarde.");
+          if (data.code === 'EMAIL_SEND_FAILED') {
+            alert("❌ No pudimos enviar el email de verificación. Por favor, verifica tu conexión e intenta de nuevo.");
+          } else {
+            alert("❌ Error interno del servidor. Por favor, intenta de nuevo más tarde.");
+          }
         } else {
           alert("❌ " + (data.error || "Error en el registro"));
         }
@@ -415,7 +426,7 @@ const Register = () => {
       if (error.name === 'AbortError') {
         alert("⚠️ La petición tardó demasiado tiempo. Intenta de nuevo.");
       } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        alert("⚠️ No se pudo conectar con el servidor. Verifica que esté corriendo en " + API_URL.replace('/api', ''));
+        alert("⚠️ No se pudo conectar con el servidor. Verifica que esté corriendo en puerto 5000.");
       } else {
         alert("⚠️ Error de conexión con el servidor. Por favor, intenta de nuevo.");
       }
@@ -424,54 +435,11 @@ const Register = () => {
     }
   }, [formData, validarFormulario, navigate]);
 
-  // MANEJAR CLICK DEL BOTÓN DE GOOGLE - CORREGIDO
-  const handleGoogleButtonClick = useCallback(() => {
-    if (!window.google || !window.google.accounts) {
-      alert("Google Sign-In no está disponible. Recarga la página.");
-      return;
-    }
-
-    try {
-      // Intentar mostrar el prompt
-      window.google.accounts.id.prompt((notification) => {
-        console.log('Google prompt notification:', notification);
-        
-        if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-          console.warn('⚠️ Google prompt no disponible:', notification.getNotDisplayedReason());
-          
-          // Mostrar botón de respaldo
-          const buttonDiv = document.getElementById('google-signin-button-fallback');
-          if (buttonDiv) {
-            buttonDiv.style.display = 'block';
-            buttonDiv.classList.remove('hidden');
-          } else {
-            // Último recurso: crear botón dinámicamente
-            const container = document.getElementById('google-button-container');
-            if (container) {
-              const newDiv = document.createElement('div');
-              newDiv.id = 'dynamic-google-button';
-              container.appendChild(newDiv);
-              
-              window.google.accounts.id.renderButton(newDiv, {
-                theme: 'outline',
-                size: 'large',
-                text: 'signup_with',
-                width: '100%'
-              });
-            }
-          }
-        }
-      });
-    } catch (error) {
-      console.error('❌ Error con Google prompt:', error);
-      alert('Error con Google Sign-In. Por favor, recarga la página e intenta de nuevo.');
-    }
-  }, []);
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-2xl mx-auto">
         <div className="bg-white p-8 rounded-2xl shadow-xl">
+          {/* Header */}
           <div className="text-center mb-8">
             <h2 className="text-3xl font-bold text-purple-700 mb-2">
               Crear Cuenta
@@ -481,14 +449,14 @@ const Register = () => {
             </p>
           </div>
 
-          {/* Botón de Google - PARTE SUPERIOR */}
+          {/* Botón de Google */}
           <div className="mb-6">
             <button
               type="button"
               onClick={handleGoogleButtonClick}
-              disabled={loading || googleLoading || !googleInitialized}
+              disabled={loading || googleLoading || !googleReady}
               className={`w-full py-3 rounded-lg transition flex items-center justify-center gap-3 shadow-sm ${
-                loading || googleLoading || !googleInitialized
+                loading || googleLoading || !googleReady
                   ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' 
                   : 'bg-white border-2 border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-gray-400'
               }`}
@@ -497,31 +465,19 @@ const Register = () => {
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-600"></div>
               ) : (
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
-                  <path
-                    fill="#4285F4"
-                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  />
-                  <path
-                    fill="#EA4335"
-                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  />
+                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                 </svg>
               )}
               {googleLoading ? "Registrando con Google..." : 
-               !googleInitialized ? "Cargando Google Sign-In..." :
+               !googleReady ? "Cargando Google Sign-In..." :
                "Registrarse con Google"}
             </button>
             
-            {/* Div oculto para fallback del botón de Google */}
-            <div id="google-signin-button-fallback" className="mt-2 hidden"></div>
+            {/* Botón fallback para Google */}
+            <div id="google-fallback-register" style={{display: 'none'}} className="mt-2"></div>
             
             <p className="text-xs text-center text-gray-500 mt-2">
               Registro rápido y seguro con tu cuenta de Google
@@ -559,6 +515,7 @@ const Register = () => {
                       errors.name ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     maxLength="100"
+                    disabled={loading || googleLoading}
                   />
                   {errors.name && (
                     <p className="text-red-600 text-sm mt-1">{errors.name}</p>
@@ -580,6 +537,7 @@ const Register = () => {
                       errors.email ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     maxLength="254"
+                    disabled={loading || googleLoading}
                   />
                   {errors.email && (
                     <p className="text-red-600 text-sm mt-1">{errors.email}</p>
@@ -604,6 +562,7 @@ const Register = () => {
                       errors.password ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     maxLength="128"
+                    disabled={loading || googleLoading}
                   />
                   {errors.password && (
                     <p className="text-red-600 text-sm mt-1">{errors.password}</p>
@@ -625,6 +584,7 @@ const Register = () => {
                       errors.telefono ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     maxLength="20"
+                    disabled={loading || googleLoading}
                   />
                   {errors.telefono && (
                     <p className="text-red-600 text-sm mt-1">{errors.telefono}</p>
@@ -656,6 +616,7 @@ const Register = () => {
                       errors['direccion.calle'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     maxLength="200"
+                    disabled={loading || googleLoading}
                   />
                   {errors['direccion.calle'] && (
                     <p className="text-red-600 text-sm mt-1">{errors['direccion.calle']}</p>
@@ -677,6 +638,7 @@ const Register = () => {
                       errors['direccion.ciudad'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     maxLength="100"
+                    disabled={loading || googleLoading}
                   />
                   {errors['direccion.ciudad'] && (
                     <p className="text-red-600 text-sm mt-1">{errors['direccion.ciudad']}</p>
@@ -698,6 +660,7 @@ const Register = () => {
                       errors['direccion.estado'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     maxLength="100"
+                    disabled={loading || googleLoading}
                   />
                   {errors['direccion.estado'] && (
                     <p className="text-red-600 text-sm mt-1">{errors['direccion.estado']}</p>
@@ -714,6 +677,7 @@ const Register = () => {
                     value={formData.direccion.pais}
                     onChange={handleDireccionChange}
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+                    disabled={loading || googleLoading}
                   >
                     <option value="Colombia">Colombia</option>
                     <option value="México">México</option>
@@ -726,7 +690,7 @@ const Register = () => {
                   </select>
                 </div>
 
-                {/* Espacio adicional para mantener el balance del diseño */}
+                {/* Espacio informativo */}
                 <div className="h-16 flex items-center justify-center">
                   <div className="text-center p-3 bg-blue-50 rounded-lg">
                     <p className="text-blue-700 text-sm font-medium">
@@ -768,6 +732,7 @@ const Register = () => {
                     type="button"
                     onClick={() => navigate("/login")}
                     className="text-purple-600 hover:text-purple-700 font-semibold hover:underline transition"
+                    disabled={loading || googleLoading}
                   >
                     Inicia Sesión
                   </button>
@@ -775,7 +740,7 @@ const Register = () => {
               </div>
             </div>
 
-            {/* Nota de campos obligatorios - ACTUALIZADA */}
+            {/* Nota informativa */}
             <div className="mt-6 p-4 bg-purple-50 rounded-lg">
               <p className="text-sm text-purple-700">
                 <span className="font-semibold">Nota:</span> Los campos marcados con (*) son obligatorios. 
@@ -784,12 +749,11 @@ const Register = () => {
               </p>
             </div>
 
-            {/* Información de debug en desarrollo */}
+            {/* Debug info en desarrollo */}
             {process.env.NODE_ENV === 'development' && (
               <div className="mt-4 p-3 bg-gray-100 rounded text-xs">
                 <p><strong>Debug info:</strong></p>
-                <p>Google Script: {googleScriptLoaded ? '✅' : '❌'}</p>
-                <p>Google Init: {googleInitialized ? '✅' : '❌'}</p>
+                <p>Google Ready: {googleReady ? '✅' : '❌'}</p>
                 <p>API URL: {API_URL}</p>
                 <p>Google Client ID: {GOOGLE_CLIENT_ID.substring(0, 20)}...</p>
               </div>

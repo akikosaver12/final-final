@@ -1,125 +1,154 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import React, { useState, useEffect, useCallback } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 
-const CompleteGoogleRegistration = () => {
-  const navigate = useNavigate();
+const API_URL = 'http://localhost:5000/api';
+
+const GoogleCompleteRegister = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState({});
-
-  // Datos del usuario de Google
   const [googleUser, setGoogleUser] = useState(null);
-  const [credential, setCredential] = useState(null);
-
-  // Datos del formulario
+  
   const [formData, setFormData] = useState({
-    telefono: "",
+    telefono: '',
     direccion: {
-      calle: "",
-      ciudad: "",
-      estado: "",
-      pais: "Colombia",
-    },
+      calle: '',
+      ciudad: '',
+      estado: '',
+      pais: 'Colombia'
+    }
   });
 
-  // Verificar si tenemos los datos necesarios del estado de navegación
+  const [errors, setErrors] = useState({});
+
+  // Verificar si hay datos de Google del estado de navegación
   useEffect(() => {
-    if (location.state && location.state.googleUser && location.state.credential) {
-      setGoogleUser(location.state.googleUser);
-      setCredential(location.state.credential);
-    } else {
-      // Si no hay datos de Google, redirigir al registro
-      console.log("No se encontraron datos de Google, redirigiendo...");
-      navigate("/register");
+    const stateData = location.state;
+    if (!stateData || !stateData.googleUser) {
+      console.warn('No se encontraron datos de Google, redirigiendo a registro normal');
+      navigate('/registro');
+      return;
     }
+    
+    console.log('Datos de Google recibidos:', stateData.googleUser);
+    setGoogleUser(stateData.googleUser);
   }, [location.state, navigate]);
 
-  // Validar teléfono en tiempo real
-  const validarTelefono = (telefono) => {
+  // Validaciones
+  const validarTelefono = useCallback((telefono) => {
+    if (!telefono) return false;
     const telefonoLimpio = telefono.replace(/[\s\-\(\)]/g, "");
     return /^\+?[\d]{7,15}$/.test(telefonoLimpio);
-  };
+  }, []);
+
+  const validarDireccion = useCallback((direccion) => {
+    return {
+      calle: direccion.calle && direccion.calle.trim().length >= 5,
+      ciudad: direccion.ciudad && direccion.ciudad.trim().length >= 2,
+      estado: direccion.estado && direccion.estado.trim().length >= 2
+    };
+  }, []);
 
   // Manejar cambios en inputs normales
-  const handleChange = (e) => {
+  const handleChange = useCallback((e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-
-    // Limpiar errores cuando el usuario modifica el campo
+    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Limpiar errores
     if (errors[name]) {
-      setErrors((prev) => ({
-        ...prev,
-        [name]: "",
-      }));
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
     }
-  };
 
-  // Manejar cambios en campos de dirección
-  const handleDireccionChange = (e) => {
+    // Validación en tiempo real
+    if (name === 'telefono' && value) {
+      setTimeout(() => {
+        if (!validarTelefono(value)) {
+          setErrors(prev => ({ ...prev, telefono: 'Formato de teléfono inválido' }));
+        }
+      }, 500);
+    }
+  }, [errors, validarTelefono]);
+
+  // Manejar cambios en dirección
+  const handleDireccionChange = useCallback((e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
-      direccion: {
-        ...prev.direccion,
-        [name]: value,
-      },
+      direccion: { ...prev.direccion, [name]: value }
     }));
 
-    // Limpiar errores de dirección
-    if (errors[`direccion.${name}`]) {
-      setErrors((prev) => ({
-        ...prev,
-        [`direccion.${name}`]: "",
-      }));
+    const errorKey = `direccion.${name}`;
+    if (errors[errorKey]) {
+      setErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[errorKey];
+        return newErrors;
+      });
     }
-  };
 
-  // Validar formulario
-  const validarFormulario = () => {
+    // Validación en tiempo real para dirección
+    if (value) {
+      setTimeout(() => {
+        if (name === 'calle' && value.trim().length < 5) {
+          setErrors(prev => ({ ...prev, [`direccion.${name}`]: 'La dirección debe tener al menos 5 caracteres' }));
+        } else if ((name === 'ciudad' || name === 'estado') && value.trim().length < 2) {
+          setErrors(prev => ({ ...prev, [`direccion.${name}`]: `${name.charAt(0).toUpperCase() + name.slice(1)} debe tener al menos 2 caracteres` }));
+        }
+      }, 500);
+    }
+  }, [errors]);
+
+  // Validar formulario completo
+  const validarFormulario = useCallback(() => {
     const nuevosErrores = {};
 
-    // Validar teléfono
     if (!formData.telefono.trim()) {
       nuevosErrores.telefono = "El teléfono es obligatorio";
     } else if (!validarTelefono(formData.telefono)) {
-      nuevosErrores.telefono = "El teléfono debe tener un formato válido (7-15 dígitos)";
+      nuevosErrores.telefono = "Teléfono inválido (7-15 dígitos)";
     }
 
-    // Validar dirección
+    const direccionValidation = validarDireccion(formData.direccion);
+    
     if (!formData.direccion.calle.trim()) {
       nuevosErrores["direccion.calle"] = "La dirección es obligatoria";
-    } else if (formData.direccion.calle.trim().length < 5) {
+    } else if (!direccionValidation.calle) {
       nuevosErrores["direccion.calle"] = "La dirección debe tener al menos 5 caracteres";
     }
 
     if (!formData.direccion.ciudad.trim()) {
       nuevosErrores["direccion.ciudad"] = "La ciudad es obligatoria";
-    } else if (formData.direccion.ciudad.trim().length < 2) {
+    } else if (!direccionValidation.ciudad) {
       nuevosErrores["direccion.ciudad"] = "La ciudad debe tener al menos 2 caracteres";
     }
 
     if (!formData.direccion.estado.trim()) {
-      nuevosErrores["direccion.estado"] = "El departamento/estado es obligatorio";
-    } else if (formData.direccion.estado.trim().length < 2) {
+      nuevosErrores["direccion.estado"] = "El estado/departamento es obligatorio";
+    } else if (!direccionValidation.estado) {
       nuevosErrores["direccion.estado"] = "El estado debe tener al menos 2 caracteres";
     }
 
     return nuevosErrores;
-  };
+  }, [formData, validarTelefono, validarDireccion]);
 
   // Manejar envío del formulario
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (!googleUser) {
+      alert("Error: Información de Google no disponible. Redirigiendo...");
+      navigate('/registro');
+      return;
+    }
 
-    console.log("🔄 Completando registro de Google...");
-
-    const erroresValidacion = validarFormulario();
-    if (Object.keys(erroresValidacion).length > 0) {
-      console.log("❌ Errores de validación:", erroresValidacion);
-      setErrors(erroresValidacion);
+    const errores = validarFormulario();
+    if (Object.keys(errores).length > 0) {
+      console.log('Errores de validación:', errores);
+      setErrors(errores);
       return;
     }
 
@@ -127,58 +156,78 @@ const CompleteGoogleRegistration = () => {
     setErrors({});
 
     try {
-      console.log("📤 Enviando datos adicionales al servidor...");
-      const res = await fetch("http://localhost:5000/api/auth/google", {
-        method: "POST",
+      console.log('Completando registro con Google para:', googleUser.email);
+
+      const payload = {
+        ...googleUser,
+        ...formData
+      };
+
+      console.log('Datos a enviar:', {
+        ...payload,
+        googleId: '[GOOGLE_ID_OCULTO]'
+      });
+
+      const res = await fetch(`${API_URL}/auth/google/complete`, {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          credential: credential,
-          userData: {
-            telefono: formData.telefono,
-            direccion: formData.direccion,
-          },
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
-      console.log("📥 Respuesta del servidor:", data);
+      console.log('Respuesta del servidor:', data);
 
       if (res.ok) {
-        // Guardar token y datos del usuario
-        localStorage.setItem("token", data.token);
+        // Registro completado exitosamente
+        localStorage.setItem("token", data.tokens.accessToken);
+        localStorage.setItem("refreshToken", data.tokens.refreshToken);
         localStorage.setItem("user", JSON.stringify(data.user));
         
-        console.log("✅ Registro completado exitosamente!");
-        alert("✅ ¡Registro completado! Bienvenido a la clínica veterinaria");
-        
-        // Redirigir a la página principal
-        navigate(data.redirectTo || "/home");
+        console.log('✅ Registro con Google completado para:', data.user.email);
+        alert(data.message || "¡Registro completado exitosamente!");
+        navigate(data.redirectTo || "/dashboard");
       } else {
-        console.log("❌ Error completando el registro:", data);
-        alert("❌ " + (data.error || "Error al completar el registro"));
+        console.log('❌ Error completando registro:', data);
+        
+        if (data.code === 'INVALID_PHONE') {
+          setErrors({ telefono: data.error });
+        } else if (data.code === 'INVALID_ADDRESS') {
+          setErrors({ "direccion.calle": data.error });
+        } else if (data.code === 'USER_ALREADY_EXISTS') {
+          alert("Ya existe una cuenta con este email. Intenta iniciar sesión.");
+          navigate('/login');
+        } else if (data.code === 'MISSING_REQUIRED_FIELDS') {
+          alert("Faltan campos obligatorios. Por favor, completa toda la información.");
+        } else {
+          alert("Error completando el registro: " + (data.error || "Error desconocido"));
+        }
       }
     } catch (error) {
-      console.error("💥 Error de conexión:", error);
-      alert("⚠️ Error de conexión con el servidor. Por favor, intenta de nuevo.");
+      console.error("Error completando registro:", error);
+      
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        alert("No se pudo conectar con el servidor. Verifica que esté corriendo en puerto 5000.");
+      } else {
+        alert("Error de conexión con el servidor");
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Cancelar y volver al registro
-  const handleCancel = () => {
-    navigate("/register");
+  // Volver al registro normal
+  const volverAlRegistro = () => {
+    navigate('/registro');
   };
 
-  // Si no hay datos de Google, mostrar loading
   if (!googleUser) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-indigo-100 flex items-center justify-center">
-        <div className="bg-white p-8 rounded-2xl shadow-xl">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="text-center mt-4 text-gray-600">Cargando...</p>
+        <div className="text-center bg-white p-8 rounded-2xl shadow-xl">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Cargando información de Google...</p>
         </div>
       </div>
     );
@@ -188,66 +237,95 @@ const CompleteGoogleRegistration = () => {
     <div className="min-h-screen bg-gradient-to-br from-purple-100 via-blue-50 to-indigo-100 py-8 px-4">
       <div className="max-w-lg mx-auto">
         <div className="bg-white p-8 rounded-2xl shadow-xl">
-          {/* Header */}
+          {/* Header con información de Google */}
           <div className="text-center mb-8">
             <div className="mb-4">
-              {googleUser.picture && (
-                <img
-                  src={googleUser.picture}
-                  alt="Profile"
-                  className="w-16 h-16 rounded-full mx-auto mb-3"
+              {googleUser.profilePicture && (
+                <img 
+                  src={googleUser.profilePicture} 
+                  alt="Foto de perfil" 
+                  className="w-20 h-20 rounded-full mx-auto border-4 border-purple-200 shadow-md"
                 />
               )}
-              <h2 className="text-3xl font-bold text-purple-700 mb-2">
-                ¡Hola, {googleUser.name}!
-              </h2>
-              <p className="text-gray-600">
-                Completa tu información para finalizar el registro
-              </p>
             </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-              <p className="text-sm text-blue-700">
-                <span className="font-medium">Email:</span> {googleUser.email}
-              </p>
-            </div>
+            <h2 className="text-2xl font-bold text-purple-700 mb-2">
+              Hola {googleUser.name}!
+            </h2>
+            <p className="text-gray-600 text-sm">
+              Solo necesitamos un poco más de información para completar tu registro en la clínica veterinaria
+            </p>
           </div>
 
-          {/* Formulario */}
           <form onSubmit={handleSubmit}>
-            <div className="space-y-6">
-              {/* Teléfono */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Teléfono *
-                </label>
-                <input
-                  type="tel"
-                  name="telefono"
-                  placeholder="Ej: +57 301 234 5678 o 3012345678"
-                  value={formData.telefono}
-                  onChange={handleChange}
-                  className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition ${
-                    errors.telefono ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                  }`}
-                />
-                {errors.telefono && (
-                  <p className="text-red-600 text-sm mt-1">{errors.telefono}</p>
-                )}
-                <p className="text-gray-500 text-xs mt-1">
-                  Formato: números con o sin código de país
-                </p>
+            <div className="space-y-5">
+              {/* Información de Google (solo lectura) */}
+              <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                <h3 className="text-sm font-semibold text-green-800 mb-3">
+                  ✅ Información verificada con Google
+                </h3>
+                
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-sm font-medium text-green-700 mb-1">
+                      Nombre completo
+                    </label>
+                    <input
+                      type="text"
+                      value={googleUser.name}
+                      disabled
+                      className="w-full p-3 border rounded-lg bg-green-50 text-green-800 font-medium"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-green-700 mb-1">
+                      Email verificado
+                    </label>
+                    <input
+                      type="email"
+                      value={googleUser.email}
+                      disabled
+                      className="w-full p-3 border rounded-lg bg-green-50 text-green-800 font-medium"
+                    />
+                  </div>
+                </div>
               </div>
 
-              {/* Sección de Dirección */}
+              {/* Información adicional requerida */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-700 border-b pb-2 mb-4">
-                  Dirección de Residencia
+                <h3 className="text-lg font-semibold text-gray-700 mb-4 border-b pb-2">
+                  Información adicional requerida
                 </h3>
 
-                {/* Dirección Completa */}
+                {/* Teléfono */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Dirección Completa *
+                    Teléfono *
+                  </label>
+                  <input
+                    type="tel"
+                    name="telefono"
+                    placeholder="Ej: +57 301 234 5678 o 3012345678"
+                    value={formData.telefono}
+                    onChange={handleChange}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 transition ${
+                      errors.telefono ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    }`}
+                    maxLength="20"
+                    disabled={loading}
+                  />
+                  {errors.telefono && (
+                    <p className="text-red-600 text-sm mt-1">{errors.telefono}</p>
+                  )}
+                  <p className="text-gray-500 text-xs mt-1">
+                    Necesitamos tu teléfono para contactarte sobre las citas de tus mascotas
+                  </p>
+                </div>
+
+                {/* Dirección completa */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Dirección completa *
                   </label>
                   <input
                     type="text"
@@ -255,53 +333,61 @@ const CompleteGoogleRegistration = () => {
                     placeholder="Ej: Calle 123 #45-67, Barrio Centro"
                     value={formData.direccion.calle}
                     onChange={handleDireccionChange}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition ${
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 transition ${
                       errors['direccion.calle'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
+                    maxLength="200"
+                    disabled={loading}
                   />
                   {errors['direccion.calle'] && (
                     <p className="text-red-600 text-sm mt-1">{errors['direccion.calle']}</p>
                   )}
                 </div>
 
-                {/* Ciudad */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Ciudad *
-                  </label>
-                  <input
-                    type="text"
-                    name="ciudad"
-                    placeholder="Ej: Barranquilla"
-                    value={formData.direccion.ciudad}
-                    onChange={handleDireccionChange}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition ${
-                      errors['direccion.ciudad'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors['direccion.ciudad'] && (
-                    <p className="text-red-600 text-sm mt-1">{errors['direccion.ciudad']}</p>
-                  )}
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {/* Ciudad */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Ciudad *
+                    </label>
+                    <input
+                      type="text"
+                      name="ciudad"
+                      placeholder="Ej: Barranquilla"
+                      value={formData.direccion.ciudad}
+                      onChange={handleDireccionChange}
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 transition ${
+                        errors['direccion.ciudad'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      }`}
+                      maxLength="100"
+                      disabled={loading}
+                    />
+                    {errors['direccion.ciudad'] && (
+                      <p className="text-red-600 text-sm mt-1">{errors['direccion.ciudad']}</p>
+                    )}
+                  </div>
 
-                {/* Departamento/Estado */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Departamento/Estado *
-                  </label>
-                  <input
-                    type="text"
-                    name="estado"
-                    placeholder="Ej: Atlántico"
-                    value={formData.direccion.estado}
-                    onChange={handleDireccionChange}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition ${
-                      errors['direccion.estado'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors['direccion.estado'] && (
-                    <p className="text-red-600 text-sm mt-1">{errors['direccion.estado']}</p>
-                  )}
+                  {/* Estado/Departamento */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Departamento *
+                    </label>
+                    <input
+                      type="text"
+                      name="estado"
+                      placeholder="Ej: Atlántico"
+                      value={formData.direccion.estado}
+                      onChange={handleDireccionChange}
+                      className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 transition ${
+                        errors['direccion.estado'] ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      }`}
+                      maxLength="100"
+                      disabled={loading}
+                    />
+                    {errors['direccion.estado'] && (
+                      <p className="text-red-600 text-sm mt-1">{errors['direccion.estado']}</p>
+                    )}
+                  </div>
                 </div>
 
                 {/* País */}
@@ -313,7 +399,8 @@ const CompleteGoogleRegistration = () => {
                     name="pais"
                     value={formData.direccion.pais}
                     onChange={handleDireccionChange}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 transition"
+                    disabled={loading}
                   >
                     <option value="Colombia">Colombia</option>
                     <option value="México">México</option>
@@ -328,6 +415,19 @@ const CompleteGoogleRegistration = () => {
               </div>
             </div>
 
+            {/* Información sobre el uso de datos */}
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <h4 className="text-sm font-semibold text-blue-800 mb-2">
+                Tu información está segura
+              </h4>
+              <ul className="text-xs text-blue-700 space-y-1">
+                <li>• Usamos tu dirección para servicios de entrega y emergencias</li>
+                <li>• Tu teléfono es para confirmación de citas y notificaciones importantes</li>
+                <li>• Tu información personal nunca será compartida con terceros</li>
+                <li>• Cumplimos con todas las normativas de protección de datos</li>
+              </ul>
+            </div>
+
             {/* Botones */}
             <div className="mt-8 space-y-3">
               <button
@@ -335,7 +435,7 @@ const CompleteGoogleRegistration = () => {
                 disabled={loading}
                 className={`w-full py-3 px-4 rounded-lg font-semibold text-white transition duration-300 ${
                   loading
-                    ? 'bg-gray-400 cursor-not-allowed'
+                    ? 'bg-gray-400 cursor-not-allowed' 
                     : 'bg-purple-600 hover:bg-purple-700 hover:transform hover:scale-105'
                 }`}
               >
@@ -345,28 +445,31 @@ const CompleteGoogleRegistration = () => {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Completando Registro...
+                    Completando registro...
                   </span>
                 ) : (
-                  'Completar Registro'
+                  'Completar Registro con Google'
                 )}
               </button>
 
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={loading}
-                className="w-full py-2 px-4 rounded-lg font-medium text-gray-600 border border-gray-300 hover:bg-gray-50 transition disabled:opacity-50"
-              >
-                Cancelar
-              </button>
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={volverAlRegistro}
+                  className="text-sm text-gray-500 hover:text-gray-700 underline transition"
+                  disabled={loading}
+                >
+                  ← Volver al registro normal (sin Google)
+                </button>
+              </div>
             </div>
 
-            {/* Nota informativa */}
-            <div className="mt-6 p-4 bg-purple-50 rounded-lg">
-              <p className="text-sm text-purple-700">
-                <span className="font-semibold">Nota:</span> Esta información nos ayuda a brindarte un mejor servicio 
-                personalizado. Todos los campos marcados con (*) son obligatorios.
+            {/* Nota sobre campos obligatorios */}
+            <div className="mt-6 p-3 bg-gray-50 rounded-lg">
+              <p className="text-xs text-gray-600">
+                <span className="font-semibold">Los campos marcados con (*) son obligatorios.</span> 
+                Tu cuenta con Google ya está verificada, solo necesitamos esta información adicional 
+                para brindarte el mejor servicio veterinario.
               </p>
             </div>
           </form>
@@ -376,4 +479,4 @@ const CompleteGoogleRegistration = () => {
   );
 };
 
-export default CompleteGoogleRegistration;
+export default GoogleCompleteRegister;

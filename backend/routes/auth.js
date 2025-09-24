@@ -182,6 +182,386 @@ router.post('/register', async (req, res) => {
   }
 });
 
+// 🔐 GOOGLE OAUTH AUTHENTICATION
+router.post('/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    
+    console.log('🔐 Procesando autenticación con Google...');
+    console.log('📧 Credential recibido:', credential ? 'SÍ' : 'NO');
+
+    if (!credential) {
+      return res.status(400).json({
+        error: "Token de Google es requerido",
+        code: 'MISSING_GOOGLE_TOKEN'
+      });
+    }
+
+    if (!GOOGLE_CLIENT_ID) {
+      console.error('❌ GOOGLE_CLIENT_ID no está configurado');
+      return res.status(500).json({
+        error: "Google OAuth no está configurado en el servidor",
+        code: 'GOOGLE_OAUTH_NOT_CONFIGURED'
+      });
+    }
+
+    // Resto del código igual...
+    // Verificar token con Google
+    let ticket;
+    try {
+      ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: GOOGLE_CLIENT_ID
+      });
+    } catch (error) {
+      console.error('❌ Error verificando token de Google:', error);
+      return res.status(401).json({
+        error: "Token de Google inválido",
+        code: 'INVALID_GOOGLE_TOKEN'
+      });
+    }
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+
+    console.log('✅ Token de Google verificado para:', email);
+
+    // Verificar si el usuario ya existe
+    let user = await User.findOne({ 
+      $or: [
+        { email: email.toLowerCase() },
+        { googleId: googleId }
+      ]
+    });
+
+    if (user) {
+      // Usuario existente
+      if (!user.googleId) {
+        // Cuenta local existente, vincular con Google
+        user.googleId = googleId;
+        user.profilePicture = picture;
+        user.authMethod = 'google';
+        user.emailVerified = true;
+        user.pendingActivation = false;
+        await user.save();
+        console.log('🔗 Cuenta local vinculada con Google:', email);
+      }
+
+      // Verificar si está activa
+      if (!user.isActive) {
+        return res.status(403).json({
+          error: "Cuenta desactivada. Contacta al administrador.",
+          code: 'ACCOUNT_DEACTIVATED'
+        });
+      }
+
+      // Login exitoso
+      const token = generateToken({ id: user._id, role: user.role });
+      const refreshToken = generateRefreshToken({ id: user._id, role: user.role });
+      
+      await user.updateLastLogin();
+
+      return res.json({
+        success: true,
+        message: `¡Bienvenido de vuelta ${user.name}!`,
+        user: {
+          id: user._id,
+          name: user.name,
+          email: user.email,
+          telefono: user.telefono,
+          direccion: user.direccion,
+          role: user.role,
+          profilePicture: user.profilePicture,
+          authMethod: user.authMethod,
+          emailVerified: user.emailVerified,
+          lastLogin: user.lastLogin
+        },
+        tokens: {
+          accessToken: token,
+          refreshToken: refreshToken
+        },
+        redirectTo: user.role === "admin" ? "/admin" : "/dashboard"
+      });
+    } else {
+      // Usuario nuevo con Google
+      return res.json({
+        requiresAdditionalInfo: true,
+        message: "Necesitamos información adicional para completar tu registro",
+        googleUser: {
+          googleId,
+          name,
+          email,
+          profilePicture: picture
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error("❌ Error en Google OAuth:", error);
+    res.status(500).json({
+      error: "Error interno del servidor",
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// ❌ CAMBIAR TAMBIÉN ESTA RUTA:
+// router.post('/auth/google/complete', async (req, res) => {
+
+// ✅ CORRECTO:
+router.post('/google/complete', async (req, res) => {
+  try {
+    const { googleId, name, email, profilePicture, telefono, direccion } = req.body;
+
+    console.log('📝 Completando registro con Google para:', email);
+
+    // Validaciones
+    if (!googleId || !name || !email || !telefono || !direccion) {
+      return res.status(400).json({
+        error: "Todos los campos son obligatorios para completar el registro",
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+
+    // Validar teléfono
+    const phoneValidation = validatePhone(telefono);
+    if (!phoneValidation.isValid) {
+      return res.status(400).json({
+        error: phoneValidation.message,
+        code: 'INVALID_PHONE'
+      });
+    }
+
+    // Validar dirección
+    const addressValidation = validateAddress(direccion);
+    if (!addressValidation.isValid) {
+      return res.status(400).json({
+        error: addressValidation.message,
+        code: 'INVALID_ADDRESS'
+      });
+    }
+
+    // Verificar que no exista el usuario
+    const existingUser = await User.findOne({
+      $or: [
+        { email: email.toLowerCase() },
+        { googleId: googleId }
+      ]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        error: "Ya existe una cuenta con este email o Google ID",
+        code: 'USER_ALREADY_EXISTS'
+      });
+    }
+
+    // Crear nuevo usuario con Google
+    const newUser = new User({
+      name: name.trim(),
+      email: email.toLowerCase(),
+      password: null,
+      telefono: telefono.trim(),
+      direccion: {
+        calle: direccion.calle.trim(),
+        ciudad: direccion.ciudad.trim(),
+        estado: direccion.estado.trim(),
+        pais: direccion.pais ? direccion.pais.trim() : 'Colombia'
+      },
+      googleId,
+      profilePicture,
+      role: 'user',
+      emailVerified: true,
+      pendingActivation: false,
+      isActive: true,
+      authMethod: 'google'
+    });
+
+    await newUser.save();
+    console.log('✅ Usuario creado con Google:', email);
+
+    // Enviar email de bienvenida
+    await sendWelcomeEmail(newUser.email, newUser.name);
+
+    // Generar tokens
+    const token = generateToken({ id: newUser._id, role: newUser.role });
+    const refreshToken = generateRefreshToken({ id: newUser._id, role: newUser.role });
+
+    await newUser.updateLastLogin();
+
+    res.status(201).json({
+      success: true,
+      message: `¡Bienvenido ${newUser.name}! Tu cuenta ha sido creada exitosamente`,
+      user: {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        telefono: newUser.telefono,
+        direccion: newUser.direccion,
+        role: newUser.role,
+        profilePicture: newUser.profilePicture,
+        authMethod: newUser.authMethod,
+        emailVerified: newUser.emailVerified,
+        lastLogin: newUser.lastLogin
+      },
+      tokens: {
+        accessToken: token,
+        refreshToken: refreshToken
+      },
+      redirectTo: "/dashboard"
+    });
+
+  } catch (error) {
+    console.error("❌ Error completando registro con Google:", error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(e => e.message);
+      res.status(400).json({
+        error: "Error de validación",
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    } else if (error.code === 11000) {
+      res.status(400).json({
+        error: "El email ya está registrado",
+        code: 'DUPLICATE_EMAIL'
+      });
+    } else {
+      res.status(500).json({
+        error: "Error interno del servidor",
+        code: 'INTERNAL_ERROR'
+      });
+    }
+  }
+});
+
+// Completar registro después de Google OAuth
+router.post('/auth/google/complete', async (req, res) => {
+  try {
+    const { googleId, name, email, profilePicture, telefono, direccion } = req.body;
+
+    console.log('📝 Completando registro con Google para:', email);
+
+    // Validaciones
+    if (!googleId || !name || !email || !telefono || !direccion) {
+      return res.status(400).json({
+        error: "Todos los campos son obligatorios para completar el registro",
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+
+    // Validar teléfono
+    const phoneValidation = validatePhone(telefono);
+    if (!phoneValidation.isValid) {
+      return res.status(400).json({
+        error: phoneValidation.message,
+        code: 'INVALID_PHONE'
+      });
+    }
+
+    // Validar dirección
+    const addressValidation = validateAddress(direccion);
+    if (!addressValidation.isValid) {
+      return res.status(400).json({
+        error: addressValidation.message,
+        code: 'INVALID_ADDRESS'
+      });
+    }
+
+    // Verificar que no exista el usuario
+    const existingUser = await User.findOne({
+      $or: [
+        { email: email.toLowerCase() },
+        { googleId: googleId }
+      ]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        error: "Ya existe una cuenta con este email o Google ID",
+        code: 'USER_ALREADY_EXISTS'
+      });
+    }
+
+    // Crear nuevo usuario con Google
+    const newUser = new User({
+      name: name.trim(),
+      email: email.toLowerCase(),
+      password: null, // No necesita password con Google
+      telefono: telefono.trim(),
+      direccion: {
+        calle: direccion.calle.trim(),
+        ciudad: direccion.ciudad.trim(),
+        estado: direccion.estado.trim(),
+        pais: direccion.pais ? direccion.pais.trim() : 'Colombia'
+      },
+      googleId,
+      profilePicture,
+      role: 'user',
+      emailVerified: true, // Google ya verificó el email
+      pendingActivation: false,
+      isActive: true,
+      authMethod: 'google'
+    });
+
+    await newUser.save();
+    console.log('✅ Usuario creado con Google:', email);
+
+    // Enviar email de bienvenida
+    await sendWelcomeEmail(newUser.email, newUser.name);
+
+    // Generar tokens
+    const token = generateToken({ id: newUser._id, role: newUser.role });
+    const refreshToken = generateRefreshToken({ id: newUser._id, role: newUser.role });
+
+    await newUser.updateLastLogin();
+
+    res.status(201).json({
+      success: true,
+      message: `¡Bienvenido ${newUser.name}! Tu cuenta ha sido creada exitosamente`,
+      user: {
+        id: newUser._id,
+        name: newUser.name,
+        email: newUser.email,
+        telefono: newUser.telefono,
+        direccion: newUser.direccion,
+        role: newUser.role,
+        profilePicture: newUser.profilePicture,
+        authMethod: newUser.authMethod,
+        emailVerified: newUser.emailVerified,
+        lastLogin: newUser.lastLogin
+      },
+      tokens: {
+        accessToken: token,
+        refreshToken: refreshToken
+      },
+      redirectTo: "/dashboard"
+    });
+
+  } catch (error) {
+    console.error("❌ Error completando registro con Google:", error);
+    
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(e => e.message);
+      res.status(400).json({
+        error: "Error de validación",
+        details: errors,
+        code: 'VALIDATION_ERROR'
+      });
+    } else if (error.code === 11000) {
+      res.status(400).json({
+        error: "El email ya está registrado",
+        code: 'DUPLICATE_EMAIL'
+      });
+    } else {
+      res.status(500).json({
+        error: "Error interno del servidor",
+        code: 'INTERNAL_ERROR'
+      });
+    }
+  }
+});
+
 // 📧 VERIFICAR EMAIL
 router.get('/verify-email/:token', async (req, res) => {
   try {
@@ -349,13 +729,15 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Verificar contraseña
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      return res.status(401).json({ 
-        error: "Credenciales inválidas",
-        code: 'INVALID_CREDENTIALS'
-      });
+    // Verificar contraseña (solo si es usuario local)
+    if (user.authMethod === 'local' && user.password) {
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ 
+          error: "Credenciales inválidas",
+          code: 'INVALID_CREDENTIALS'
+        });
+      }
     }
 
     // Verificar si la cuenta está activa
@@ -577,6 +959,14 @@ router.put('/change-password', verifyToken, async (req, res) => {
       });
     }
 
+    // No permitir cambio de contraseña para usuarios de Google
+    if (user.authMethod === 'google') {
+      return res.status(400).json({
+        error: "Los usuarios registrados con Google no pueden cambiar la contraseña",
+        code: 'GOOGLE_USER_NO_PASSWORD_CHANGE'
+      });
+    }
+
     // Verificar contraseña actual
     const isValidCurrentPassword = await bcrypt.compare(currentPassword, user.password);
     if (!isValidCurrentPassword) {
@@ -633,6 +1023,13 @@ router.post('/forgot-password', async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) {
       // Por seguridad, siempre responder éxito aunque el usuario no exista
+      return res.json({
+        message: "Si existe una cuenta con ese email, recibirás instrucciones de recuperación"
+      });
+    }
+
+    // No permitir reset para usuarios de Google
+    if (user.authMethod === 'google') {
       return res.json({
         message: "Si existe una cuenta con ese email, recibirás instrucciones de recuperación"
       });
@@ -755,6 +1152,8 @@ router.get('/health', (req, res) => {
     },
     endpoints: {
       'POST /register': 'Registro de usuario',
+      'POST /auth/google': 'Autenticación con Google',
+      'POST /auth/google/complete': 'Completar registro con Google',
       'GET /verify-email/:token': 'Verificación de email',
       'POST /resend-verification': 'Reenviar verificación',
       'POST /login': 'Inicio de sesión',
