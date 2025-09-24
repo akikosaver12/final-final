@@ -1,317 +1,241 @@
-const mongoose = require('mongoose');
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const jwt = require('jsonwebtoken');
 
-// Esquema para vacunas
-const VacunaSchema = new mongoose.Schema({
-  nombre: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  fecha: {
-    type: Date,
-    required: true
-  },
-  imagen: {
-    type: String,
-    default: ""
-  },
-  veterinario: {
-    type: String,
-    trim: true
-  },
-  proximaDosis: {
-    type: Date
-  },
-  notas: {
-    type: String,
-    trim: true
+// Importar modelo de Mascota
+const Mascota = require('../models/Mascota');
+
+// Middleware de verificación de token
+const verifyToken = (req, res, next) => {
+  const token = req.header("Authorization")?.replace("Bearer ", "");
+
+  if (!token) {
+    return res.status(401).json({ error: "Acceso denegado. Token requerido." });
   }
-}, {
-  timestamps: true
+
+  try {
+    const verified = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = verified;
+    next();
+  } catch (error) {
+    console.error('❌ Error verificando token:', error);
+    res.status(401).json({ error: "Token inválido" });
+  }
+};
+
+// Configuración de multer para subida de imágenes
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadsDir = path.join(__dirname, "../uploads");
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    cb(null, "mascota-" + uniqueSuffix + path.extname(file.originalname));
+  },
 });
 
-// Esquema para operaciones
-const OperacionSchema = new mongoose.Schema({
-  nombre: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  descripcion: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  fecha: {
-    type: Date,
-    required: true
-  },
-  imagen: {
-    type: String,
-    default: ""
-  },
-  veterinario: {
-    type: String,
-    trim: true
-  },
-  costo: {
-    type: Number,
-    min: 0
-  },
-  estado: {
-    type: String,
-    enum: ['programada', 'en_proceso', 'completada', 'cancelada'],
-    default: 'completada'
-  },
-  notas: {
-    type: String,
-    trim: true
-  }
-}, {
-  timestamps: true
-});
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
 
-// Esquema principal de mascota
-const MascotaSchema = new mongoose.Schema({
-  nombre: {
-    type: String,
-    required: true,
-    trim: true,
-    minlength: 1,
-    maxlength: 50
-  },
-  especie: {
-    type: String,
-    required: true,
-    trim: true,
-    enum: ['Perro', 'Gato', 'Ave', 'Reptil', 'Pez', 'Roedor', 'Otro']
-  },
-  raza: {
-    type: String,
-    required: true,
-    trim: true,
-    maxlength: 100
-  },
-  edad: {
-    type: Number,
-    required: true,
-    min: 0,
-    max: 30
-  },
-  unidadEdad: {
-    type: String,
-    enum: ['meses', 'años'],
-    default: 'años'
-  },
-  genero: {
-    type: String,
-    required: true,
-    enum: ['Macho', 'Hembra']
-  },
-  estado: {
-    type: String,
-    required: true,
-    trim: true,
-    enum: ['Saludable', 'Enfermo', 'En tratamiento', 'Recuperándose', 'Crítico']
-  },
-  peso: {
-    type: Number,
-    min: 0,
-    max: 200
-  },
-  color: {
-    type: String,
-    trim: true,
-    maxlength: 100
-  },
-  
-  // Información médica
-  enfermedades: {
-    type: String,
-    default: "",
-    trim: true
-  },
-  alergias: {
-    type: String,
-    default: "",
-    trim: true
-  },
-  medicamentos: {
-    type: String,
-    default: "",
-    trim: true
-  },
-  historial: {
-    type: String,
-    default: "",
-    trim: true
-  },
-  
-  // Información adicional
-  microchip: {
-    numero: {
-      type: String,
-      trim: true
-    },
-    fechaImplante: {
-      type: Date
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error("Solo se permiten imágenes (jpeg, jpg, png, gif, webp)"));
     }
   },
-  esterilizado: {
-    type: Boolean,
-    default: false
-  },
-  fechaEsterilizacion: {
-    type: Date
-  },
-  
-  // Archivos
-  imagen: {
-    type: String,
-    default: ""
-  },
-  documentos: [{
-    nombre: String,
-    url: String,
-    tipo: {
-      type: String,
-      enum: ['certificado', 'examen', 'radiografia', 'otro']
-    },
-    fecha: {
-      type: Date,
-      default: Date.now
+});
+
+// 🐾 RUTAS DE MASCOTAS
+
+// Obtener todas las mascotas del usuario
+router.get("/", verifyToken, async (req, res) => {
+  try {
+    console.log('🔍 Usuario solicitando mascotas:', req.user.id);
+    
+    // Buscar mascotas del usuario
+    const mascotas = await Mascota.find({ usuario: req.user.id }).sort({ createdAt: -1 });
+    
+    console.log(`📋 Encontradas ${mascotas.length} mascotas para el usuario`);
+    
+    res.json(mascotas);
+  } catch (error) {
+    console.error('❌ Error obteniendo mascotas:', error);
+    res.status(500).json({ 
+      error: "Error interno del servidor al obtener mascotas",
+      details: error.message 
+    });
+  }
+});
+
+// Obtener una mascota específica por ID
+router.get("/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🔍 Buscando mascota:', id, 'para usuario:', req.user.id);
+
+    const mascota = await Mascota.findOne({ 
+      _id: id, 
+      usuario: req.user.id 
+    });
+
+    if (!mascota) {
+      return res.status(404).json({ error: "Mascota no encontrada" });
     }
-  }],
-  
-  // Relaciones
-  usuario: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
-    required: true,
-    index: true
-  },
-  
-  // Historiales médicos
-  vacunas: [VacunaSchema],
-  operaciones: [OperacionSchema],
-  
-  // Estado de la mascota
-  activo: {
-    type: Boolean,
-    default: true
-  },
-  fallecido: {
-    type: Boolean,
-    default: false
-  },
-  fechaFallecimiento: {
-    type: Date
-  },
-  
-  // Información de contacto de emergencia
-  contactoEmergencia: {
-    nombre: String,
-    telefono: String,
-    relacion: String
-  }
-}, {
-  timestamps: true,
-  toJSON: { virtuals: true },
-  toObject: { virtuals: true }
-});
 
-// Virtual para edad formateada
-MascotaSchema.virtual('edadFormateada').get(function() {
-  return `${this.edad} ${this.unidadEdad}`;
-});
-
-// Virtual para próximas vacunas
-MascotaSchema.virtual('proximasVacunas').get(function() {
-  const hoy = new Date();
-  return this.vacunas.filter(vacuna => 
-    vacuna.proximaDosis && vacuna.proximaDosis > hoy
-  ).sort((a, b) => a.proximaDosis - b.proximaDosis);
-});
-
-// Virtual para verificar si necesita vacunas
-MascotaSchema.virtual('necesitaVacunas').get(function() {
-  const hoy = new Date();
-  const treintaDias = new Date(hoy.getTime() + 30 * 24 * 60 * 60 * 1000);
-  
-  return this.vacunas.some(vacuna => 
-    vacuna.proximaDosis && 
-    vacuna.proximaDosis >= hoy && 
-    vacuna.proximaDosis <= treintaDias
-  );
-});
-
-// Método para agregar vacuna
-MascotaSchema.methods.agregarVacuna = function(datosVacuna) {
-  this.vacunas.push(datosVacuna);
-  return this.save();
-};
-
-// Método para agregar operación
-MascotaSchema.methods.agregarOperacion = function(datosOperacion) {
-  this.operaciones.push(datosOperacion);
-  return this.save();
-};
-
-// Método para actualizar estado
-MascotaSchema.methods.actualizarEstado = function(nuevoEstado, notas) {
-  this.estado = nuevoEstado;
-  if (notas) {
-    this.historial += `\n${new Date().toLocaleDateString()}: Estado cambiado a ${nuevoEstado}. ${notas}`;
-  }
-  return this.save();
-};
-
-// Método para marcar como fallecido
-MascotaSchema.methods.marcarComoFallecido = function(fecha, causa) {
-  this.fallecido = true;
-  this.activo = false;
-  this.fechaFallecimiento = fecha || new Date();
-  this.estado = 'Fallecido';
-  if (causa) {
-    this.historial += `\n${new Date().toLocaleDateString()}: Mascota fallecida. Causa: ${causa}`;
-  }
-  return this.save();
-};
-
-// Middleware para actualizar timestamps de vacunas y operaciones
-MascotaSchema.pre('save', function(next) {
-  // Actualizar timestamps de subdocumentos si son nuevos
-  if (this.isModified('vacunas')) {
-    this.vacunas.forEach(vacuna => {
-      if (vacuna.isNew) {
-        vacuna.createdAt = new Date();
-        vacuna.updatedAt = new Date();
-      } else if (vacuna.isModified()) {
-        vacuna.updatedAt = new Date();
-      }
+    console.log('✅ Mascota encontrada:', mascota.nombre);
+    res.json(mascota);
+  } catch (error) {
+    console.error('❌ Error obteniendo mascota:', error);
+    res.status(500).json({ 
+      error: "Error interno del servidor al obtener mascota",
+      details: error.message 
     });
   }
-  
-  if (this.isModified('operaciones')) {
-    this.operaciones.forEach(operacion => {
-      if (operacion.isNew) {
-        operacion.createdAt = new Date();
-        operacion.updatedAt = new Date();
-      } else if (operacion.isModified()) {
-        operacion.updatedAt = new Date();
-      }
-    });
-  }
-  
-  next();
 });
 
-// Índices para optimización
-MascotaSchema.index({ usuario: 1, activo: 1 });
-MascotaSchema.index({ especie: 1 });
-MascotaSchema.index({ estado: 1 });
-MascotaSchema.index({ nombre: 'text', raza: 'text' });
+// Crear nueva mascota
+router.post("/", verifyToken, upload.single("imagen"), async (req, res) => {
+  try {
+    const { nombre, especie, raza, edad, genero, estado, enfermedades, historial } = req.body;
 
-const Mascota = mongoose.model("Mascota", MascotaSchema);
+    console.log('🆕 Creando nueva mascota:', { nombre, especie, raza, edad, genero, estado });
 
-module.exports = Mascota;
+    // Validaciones obligatorias
+    if (!nombre || !especie || !raza || !edad || !genero || !estado) {
+      const faltantes = [];
+      if (!nombre) faltantes.push("nombre");
+      if (!especie) faltantes.push("especie");
+      if (!raza) faltantes.push("raza");
+      if (!edad) faltantes.push("edad");
+      if (!genero) faltantes.push("genero");
+      if (!estado) faltantes.push("estado");
+
+      return res.status(400).json({
+        error: "Faltan campos obligatorios",
+        campos: faltantes,
+      });
+    }
+
+    const edadNum = parseInt(edad);
+    if (isNaN(edadNum) || edadNum < 0 || edadNum > 30) {
+      return res.status(400).json({ error: "La edad debe ser un número entre 0 y 30" });
+    }
+
+    if (!["Macho", "Hembra"].includes(genero)) {
+      return res.status(400).json({ error: "El género debe ser 'Macho' o 'Hembra'" });
+    }
+
+    const nuevaMascota = new Mascota({
+      nombre: nombre.trim(),
+      especie: especie.trim(),
+      raza: raza.trim(),
+      edad: edadNum,
+      genero,
+      estado: estado.trim(),
+      enfermedades: enfermedades ? enfermedades.trim() : "",
+      historial: historial ? historial.trim() : "",
+      imagen: req.file
+        ? `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`
+        : "",
+      usuario: req.user.id,
+    });
+
+    await nuevaMascota.save();
+    console.log('✅ Mascota registrada:', nuevaMascota.nombre, 'para usuario:', req.user.id);
+    res.status(201).json({ msg: "Mascota registrada", mascota: nuevaMascota });
+  } catch (err) {
+    console.error("❌ Error creando mascota:", err);
+    if (err.name === 'ValidationError') {
+      const errors = Object.values(err.errors).map(e => e.message);
+      res.status(400).json({ msg: "Error de validación", errors });
+    } else {
+      res.status(500).json({ msg: "Error en el servidor", error: err.message });
+    }
+  }
+});
+
+// Actualizar mascota
+router.put("/:id", verifyToken, upload.single("imagen"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nombre, especie, raza, edad, genero, estado, enfermedades, historial } = req.body;
+
+    console.log('🔄 Actualizando mascota:', id);
+
+    const mascota = await Mascota.findOne({ _id: id, usuario: req.user.id });
+
+    if (!mascota) {
+      return res.status(404).json({ error: "Mascota no encontrada" });
+    }
+
+    // Actualizar campos
+    if (nombre) mascota.nombre = nombre.trim();
+    if (especie) mascota.especie = especie.trim();
+    if (raza) mascota.raza = raza.trim();
+    if (edad) {
+      const edadNum = parseInt(edad);
+      if (isNaN(edadNum) || edadNum < 0 || edadNum > 30) {
+        return res.status(400).json({ error: "La edad debe ser un número entre 0 y 30" });
+      }
+      mascota.edad = edadNum;
+    }
+    if (genero && ["Macho", "Hembra"].includes(genero)) {
+      mascota.genero = genero;
+    }
+    if (estado) mascota.estado = estado.trim();
+    if (enfermedades !== undefined) mascota.enfermedades = enfermedades.trim();
+    if (historial !== undefined) mascota.historial = historial.trim();
+
+    // Actualizar imagen si se subió una nueva
+    if (req.file) {
+      mascota.imagen = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+    }
+
+    await mascota.save();
+    console.log('✅ Mascota actualizada:', mascota.nombre);
+    res.json({ msg: "Mascota actualizada", mascota });
+  } catch (error) {
+    console.error('❌ Error actualizando mascota:', error);
+    res.status(500).json({ 
+      error: "Error interno del servidor al actualizar mascota",
+      details: error.message 
+    });
+  }
+});
+
+// Eliminar mascota
+router.delete("/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🗑️ Eliminando mascota:', id);
+
+    const mascota = await Mascota.findOneAndDelete({ _id: id, usuario: req.user.id });
+
+    if (!mascota) {
+      return res.status(404).json({ error: "Mascota no encontrada" });
+    }
+
+    console.log('✅ Mascota eliminada:', mascota.nombre);
+    res.json({ msg: "Mascota eliminada", mascota });
+  } catch (error) {
+    console.error('❌ Error eliminando mascota:', error);
+    res.status(500).json({ 
+      error: "Error interno del servidor al eliminar mascota",
+      details: error.message 
+    });
+  }
+});
+
+module.exports = router;

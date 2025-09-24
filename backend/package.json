@@ -1,7 +1,7 @@
 {
   "name": "veterinaria-backend",
   "version": "1.0.0",
-  "description": "Backend para clínica veterinaria con pasarela de pagos",
+  "description": "API Backend para sistema veterinario",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,33 +10,29 @@
   },
   "keywords": [
     "veterinaria",
-    "nodejs",
-    "express",
-    "mongodb",
-    "mercadopago",
-    "rest-api"
+    "api",
+    "backend",
+    "mongodb"
   ],
   "author": "Tu Nombre",
   "license": "ISC",
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
-    "crypto": "^1.0.1",
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
-    "google-auth-library": "^9.15.1",
-    "helmet": "^8.1.0",
+    "fs": "^0.0.1-security",
     "jsonwebtoken": "^9.0.2",
     "mercadopago": "^2.9.0",
     "mongoose": "^8.18.2",
-    "morgan": "^1.10.1",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^6.10.1"
+    "nodemailer": "^6.10.1",
+    "path": "^0.12.7"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.2"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }

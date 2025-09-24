@@ -12,8 +12,7 @@ const AdminPanel = () => {
   // --- Obtener token robusto ---
   const getToken = () => {
     if (typeof window !== "undefined" && window.localStorage) {
-      const raw =
-        localStorage.getItem("token") || localStorage.getItem("auth") || "";
+      const raw = localStorage.getItem("token") || localStorage.getItem("auth") || "";
       try {
         const maybe = JSON.parse(raw);
         if (maybe && typeof maybe === "object" && maybe.token) return maybe.token;
@@ -23,6 +22,7 @@ const AdminPanel = () => {
     return "";
   };
 
+  // --- Estados principales ---
   const [activeTab, setActiveTab] = useState("productos");
   const [formData, setFormData] = useState({
     nombre: "",
@@ -41,10 +41,11 @@ const AdminPanel = () => {
     envioGratis: false
   });
   
-  // ESTADO PARA EDICIÓN
+  // Estado para edición
   const [editingProduct, setEditingProduct] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   
+  // Estados de datos
   const [previewImage, setPreviewImage] = useState(null);
   const [usuarios, setUsuarios] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -55,9 +56,59 @@ const AdminPanel = () => {
   const [loading, setLoading] = useState(false);
   const [warn, setWarn] = useState("");
   const [serverStatus, setServerStatus] = useState("checking");
+  
+  // Refs
   const fileRef = useRef(null);
 
-  // FUNCIÓN PARA INICIAR EDICIÓN
+  // --- Funciones de servidor ---
+  const checkServerHealth = async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/health`);
+      if (response.ok) {
+        setServerStatus("online");
+        return true;
+      } else {
+        setServerStatus("offline");
+        return false;
+      }
+    } catch (error) {
+      console.error("Server health check failed:", error);
+      setServerStatus("offline");
+      return false;
+    }
+  };
+
+  // --- Fetch helper ---
+  const fetchJSON = async (url, options = {}) => {
+    try {
+      const token = getToken();
+      const headers = { ...(options.headers || {}) };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      
+      const res = await fetch(url, { ...options, headers });
+      let bodyText = await res.text();
+      
+      if (!res.ok) {
+        let message = bodyText || `HTTP ${res.status}`;
+        try {
+          const j = JSON.parse(bodyText);
+          message = j.error || j.message || message;
+        } catch {}
+        throw new Error(`${res.status} ${res.statusText} - ${message}`);
+      }
+      
+      try {
+        return JSON.parse(bodyText);
+      } catch {
+        return bodyText;
+      }
+    } catch (error) {
+      console.error(`❌ Fetch error for ${url}:`, error);
+      throw error;
+    }
+  };
+
+  // --- Funciones de edición ---
   const startEditProduct = (producto) => {
     setIsEditMode(true);
     setEditingProduct(producto);
@@ -68,7 +119,7 @@ const AdminPanel = () => {
       nombre: producto.nombre || "",
       precio: producto.precio || "",
       descripcion: producto.descripcion || "",
-      imagen: null, // La imagen se mantendrá como estaba
+      imagen: null,
       categoria: producto.categoria || "otros",
       stock: producto.stock || "",
       tieneDescuento: producto.descuento?.tiene || false,
@@ -83,16 +134,18 @@ const AdminPanel = () => {
       envioGratis: producto.envioGratis || false
     });
     
-    setPreviewImage(null);
-    if (fileRef.current) fileRef.current.value = "";
+    // Limpiar preview de imagen
+    if (previewImage) {
+      URL.revokeObjectURL(previewImage);
+      setPreviewImage(null);
+    }
   };
 
-  // FUNCIÓN PARA CANCELAR EDICIÓN
   const cancelEdit = () => {
     setIsEditMode(false);
     setEditingProduct(null);
     
-    // Resetear formulario
+    // Reset form
     setFormData({
       nombre: "",
       precio: "",
@@ -110,131 +163,21 @@ const AdminPanel = () => {
       envioGratis: false
     });
     
-    setPreviewImage(null);
+    if (previewImage) {
+      URL.revokeObjectURL(previewImage);
+      setPreviewImage(null);
+    }
+    
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  // Función para agregar vacunas
-  const handleAgregarVacuna = async (e, mascotaId) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const vacuna = {
-      nombre: formData.get("nombre"),
-      fecha: formData.get("fecha"),
-    };
-
-    const token = getToken();
-    try {
-      const res = await fetch(`${BASE_URL}/api/mascotas/${mascotaId}/vacunas`, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(vacuna),
-      });
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Error al agregar vacuna: ${errorText}`);
-      }
-      const result = await res.json();
-      setMascotasUsuario((prev) =>
-        prev.map((m) => (m._id === mascotaId ? result.mascota : m))
-      );
-      e.target.reset();
-      alert("✅ Vacuna agregada correctamente");
-    } catch (err) {
-      alert("No se pudo agregar la vacuna: " + err.message);
-    }
-  };
-
-  // Función para agregar operaciones
-  const handleAgregarOperacion = async (e, mascotaId) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    const operacion = {
-      nombre: formData.get("nombre"),
-      descripcion: formData.get("descripcion"),
-      fecha: formData.get("fecha"),
-    };
-
-    const token = getToken();
-    try {
-      const res = await fetch(`${BASE_URL}/api/mascotas/${mascotaId}/operaciones`, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(operacion),
-      });
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Error al agregar operación: ${errorText}`);
-      }
-      const result = await res.json();
-      setMascotasUsuario((prev) =>
-        prev.map((m) => (m._id === mascotaId ? result.mascota : m))
-      );
-      e.target.reset();
-      alert("✅ Operación agregada correctamente");
-    } catch (err) {
-      alert("No se pudo agregar la operación: " + err.message);
-    }
-  };
-
-  // --- Server Health ---
-  const checkServerHealth = async () => {
-    try {
-      const response = await fetch(`${BASE_URL}/api/health`);
-      if (response.ok) {
-        setServerStatus("online");
-        return true;
-      } else {
-        setServerStatus("offline");
-        return false;
-      }
-    } catch (error) {
-      console.error("Server health check failed:", error);
-      setServerStatus("offline");
-      return false;
-    }
-  };
-
-  // --- fetch helper ---
-  const fetchJSON = async (url, options = {}) => {
-    try {
-      const token = getToken();
-      const headers = { ...(options.headers || {}) };
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(url, { ...options, headers });
-      let bodyText = await res.text();
-      if (!res.ok) {
-        let message = bodyText || `HTTP ${res.status}`;
-        try {
-          const j = JSON.parse(bodyText);
-          message = j.error || j.message || message;
-        } catch {}
-        throw new Error(`${res.status} ${res.statusText} - ${message}`);
-      }
-      try {
-        return JSON.parse(bodyText);
-      } catch {
-        return bodyText;
-      }
-    } catch (error) {
-      console.error(`❌ Fetch error for ${url}:`, error);
-      throw error;
-    }
-  };
-
-  // --- Handlers formulario actualizados ---
+  // --- Handlers del formulario ---
   const handleChange = (e) => {
     const { name, value, files, type, checked } = e.target;
+    
     if (files && files[0]) {
       setFormData((s) => ({ ...s, [name]: files[0] }));
+      if (previewImage) URL.revokeObjectURL(previewImage);
       setPreviewImage(URL.createObjectURL(files[0]));
     } else if (type === 'checkbox') {
       setFormData((s) => ({ ...s, [name]: checked }));
@@ -243,19 +186,21 @@ const AdminPanel = () => {
     }
   };
 
-  // FUNCIÓN ACTUALIZADA PARA MANEJAR CREAR/EDITAR
   const handleSubmit = async (e) => {
     e.preventDefault();
     setWarn("");
+    
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) {
       setWarn("❌ El servidor no está disponible.");
       return;
     }
+    
     const token = getToken();
     if (!token) return setWarn("Debes iniciar sesión para gestionar productos.");
 
     setLoading(true);
+    
     try {
       const data = new FormData();
       
@@ -263,8 +208,6 @@ const AdminPanel = () => {
       data.append("nombre", formData.nombre);
       data.append("precio", formData.precio);
       data.append("descripcion", formData.descripcion);
-      
-      // Nuevos campos
       data.append("categoria", formData.categoria);
       data.append("stock", formData.stock || "0");
       data.append("envioGratis", formData.envioGratis);
@@ -292,7 +235,7 @@ const AdminPanel = () => {
         data.append("imagen", formData.imagen);
       }
 
-      // DETERMINAR SI ES CREAR O EDITAR
+      // Determinar si es crear o editar
       const url = isEditMode 
         ? `${BASE_URL}/api/productos/${editingProduct._id}`
         : `${BASE_URL}/api/productos`;
@@ -307,30 +250,10 @@ const AdminPanel = () => {
 
       alert(isEditMode ? "✅ Producto actualizado con éxito" : "✅ Producto agregado con éxito");
       
-      // Reset form
-      setFormData({
-        nombre: "",
-        precio: "",
-        descripcion: "",
-        imagen: null,
-        categoria: "otros",
-        stock: "",
-        tieneDescuento: false,
-        porcentajeDescuento: "",
-        fechaInicioDescuento: "",
-        fechaFinDescuento: "",
-        tieneGarantia: false,
-        mesesGarantia: "",
-        descripcionGarantia: "",
-        envioGratis: false
-      });
-      
-      setPreviewImage(null);
-      setIsEditMode(false);
-      setEditingProduct(null);
-      
-      if (fileRef.current) fileRef.current.value = "";
+      // Reset y reload
+      cancelEdit();
       getProductos();
+      
     } catch (err) {
       setWarn(`❌ Error al ${isEditMode ? 'actualizar' : 'crear'} producto: ${err.message}`);
     } finally {
@@ -338,21 +261,26 @@ const AdminPanel = () => {
     }
   };
 
-  // --- Usuarios ---
+  // --- Funciones de datos ---
   const getUsuarios = async () => {
     setWarn("");
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) return setUsuarios([]);
+    
     try {
       const token = getToken();
       if (!token) return setWarn("Debes iniciar sesión como admin.");
+      
       const me = await fetchJSON(`${BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       if (me?.role !== "admin") return setWarn("Tu usuario no es admin.");
+      
       const data = await fetchJSON(`${BASE_URL}/api/usuarios`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       setUsuarios(data);
     } catch (error) {
       setWarn(`No se pudieron cargar los usuarios: ${error.message}`);
@@ -364,20 +292,22 @@ const AdminPanel = () => {
     try {
       const token = getToken();
       if (!token) return setWarn("Debes iniciar sesión para ver mascotas.");
+      
       const data = await fetchJSON(`${BASE_URL}/api/usuarios/${userId}/mascotas`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       setMascotasUsuario(data.mascotas || []);
     } catch (error) {
       setWarn(`No se pudieron cargar las mascotas: ${error.message}`);
     }
   };
 
-  // --- Productos ---
   const getProductos = async () => {
     setWarn("");
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) return setProductos([]);
+    
     try {
       const data = await fetchJSON(`${BASE_URL}/api/productos`);
       setProductos(data);
@@ -406,18 +336,22 @@ const AdminPanel = () => {
 
   const eliminarProducto = async (id) => {
     if (!window.confirm("¿Seguro que deseas eliminar este producto?")) return;
+    
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) {
       alert("❌ El servidor no está disponible.");
       return;
     }
+    
     try {
       const token = getToken();
       if (!token) return alert("Debes iniciar sesión como admin.");
+      
       await fetchJSON(`${BASE_URL}/api/productos/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       alert("🗑️ Producto eliminado con éxito");
       getProductos();
     } catch (error) {
@@ -425,21 +359,25 @@ const AdminPanel = () => {
     }
   };
 
-  // --- Citas ---
   const getCitas = async () => {
     setWarn("");
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) return setCitas([]);
+    
     try {
       const token = getToken();
       if (!token) return setWarn("Debes iniciar sesión como admin.");
+      
       const me = await fetchJSON(`${BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       if (me?.role !== "admin") return setWarn("Tu usuario no es admin.");
+      
       const data = await fetchJSON(`${BASE_URL}/api/citas`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      
       setCitas(data);
     } catch (error) {
       setWarn(`No se pudieron cargar las citas: ${error.message}`);
@@ -469,8 +407,8 @@ const AdminPanel = () => {
 
   useEffect(() => {
     if (activeTab === "verUsuarios") getUsuarios();
-    if (activeTab === "verProductos") getProductos();
-    if (activeTab === "verCitas") getCitas();
+    else if (activeTab === "verProductos") getProductos();
+    else if (activeTab === "verCitas") getCitas();
   }, [activeTab]);
 
   useEffect(() => {
@@ -479,6 +417,7 @@ const AdminPanel = () => {
     };
   }, [previewImage]);
 
+  // --- Configuración del Sidebar ---
   const sidebarItems = [
     { id: "productos", label: isEditMode ? "Editar Producto" : "Crear Producto", icon: Plus },
     { id: "verProductos", label: "Ver Productos", icon: Package },
@@ -504,8 +443,7 @@ const AdminPanel = () => {
             </div>
 
             {/* Status del servidor */}
-            <div
-              className={`px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-3 ${
+            <div className={`px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-3 ${
                 serverStatus === "online"
                   ? "bg-green-50 text-green-800 border border-green-200"
                   : serverStatus === "offline"
@@ -569,10 +507,10 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* Formulario Productos - ACTUALIZADO PARA CREAR/EDITAR */}
+          {/* ===== FORMULARIO PRODUCTOS ===== */}
           {activeTab === "productos" && (
             <div>
-              {/* HEADER CON BOTÓN CANCELAR */}
+              {/* Header con botón cancelar para edición */}
               {isEditMode && (
                 <div className="mb-6 p-6 bg-blue-50 border border-blue-200 rounded-2xl">
                   <div className="flex justify-between items-center">
@@ -587,271 +525,330 @@ const AdminPanel = () => {
                     </div>
                     <button
                       onClick={cancelEdit}
-                      className="bg-gray-500 text-white px-6 py-3 rounded-2xl hover:bg-gray-600 transition-colors flex items-center gap-2 font-medium"
+                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-2xl flex items-center gap-2 transition-colors"
                     >
                       <X size={16} />
-                      ❌ Cancelar Edición
+                      Cancelar
                     </button>
                   </div>
                 </div>
               )}
 
-              <form
-                onSubmit={handleSubmit}
-                className="bg-white p-12 rounded-3xl shadow-xl border border-gray-100 space-y-8"
-              >
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+              <div className="bg-white rounded-3xl shadow-2xl p-8">
+                <div className="mb-8">
+                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                    {isEditMode ? "✏️ Editar Producto" : "➕ Crear Nuevo Producto"}
+                  </h2>
+                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Información básica */}
-                  <div className="space-y-6">
-                    <div className="bg-gradient-to-r from-gray-50 to-white p-8 rounded-2xl border border-gray-100">
-                      <h3 className="text-2xl font-semibold text-gray-900 mb-8 flex items-center">
-                        <div className="w-3 h-3 bg-lime-400 rounded-full mr-4"></div>
-                        {isEditMode ? "Editar Información Básica" : "Información Básica"}
-                      </h3>
-                      
-                      <div className="space-y-6">
-                        <input
-                          type="text"
-                          name="nombre"
-                          placeholder="Nombre del producto"
-                          className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                          onChange={handleChange}
-                          value={formData.nombre}
-                          required
-                        />
-                        
-                        <textarea
-                          name="descripcion"
-                          placeholder="Descripción"
-                          className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg resize-none focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                          rows="3"
-                          onChange={handleChange}
-                          value={formData.descripcion}
-                          required
-                        />
-                        
-                        <div className="grid grid-cols-2 gap-4">
-                          <input
-                            type="number"
-                            name="precio"
-                            placeholder="Precio"
-                            min="0"
-                            step="0.01"
-                            className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                            onChange={handleChange}
-                            value={formData.precio}
-                            required
-                          />
-                          <input
-                            type="number"
-                            name="stock"
-                            placeholder="Stock"
-                            min="0"
-                            className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                            onChange={handleChange}
-                            value={formData.stock}
-                          />
-                        </div>
-                        
-                        <select
-                          name="categoria"
-                          className="w-full border-2 border-gray-200 p-4 rounded-2xl text-lg bg-white focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                          onChange={handleChange}
-                          value={formData.categoria}
-                          required
-                        >
-                          {categorias.map((cat) => (
-                            <option key={cat.value} value={cat.value}>
-                              {cat.label}
-                            </option>
-                          ))}
-                        </select>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-3">
-                            {isEditMode ? "Cambiar imagen (opcional)" : "Imagen del producto"}
-                          </label>
-                          <input
-                            ref={fileRef}
-                            type="file"
-                            name="imagen"
-                            accept="image/*"
-                            className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                            onChange={handleChange}
-                          />
-                          {isEditMode && !previewImage && editingProduct?.imagen && (
-                            <div className="mt-4">
-                              <p className="text-sm text-gray-600 mb-2">Imagen actual:</p>
-                              <img
-                                src={
-                                  editingProduct.imagen.startsWith("http")
-                                    ? editingProduct.imagen
-                                    : `${BASE_URL}${editingProduct.imagen}`
-                                }
-                                alt="Imagen actual"
-                                className="w-40 h-40 object-cover rounded-2xl shadow-lg"
-                              />
-                            </div>
-                          )}
-                        </div>
-                        
-                        {previewImage && (
-                          <div>
-                            <p className="text-sm font-medium text-gray-700 mb-2">
-                              {isEditMode ? "Nueva imagen:" : "Vista previa:"}
-                            </p>
-                            <img
-                              src={previewImage}
-                              alt="preview"
-                              className="w-40 h-40 object-cover rounded-2xl shadow-lg"
-                            />
-                          </div>
-                        )}
-                      </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-gray-700 font-semibold mb-2">
+                        Nombre del Producto *
+                      </label>
+                      <input
+                        type="text"
+                        name="nombre"
+                        value={formData.nombre}
+                        onChange={handleChange}
+                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                        placeholder="Ej: Alimento Premium para Perros"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-gray-700 font-semibold mb-2">
+                        Precio (COP) *
+                      </label>
+                      <input
+                        type="number"
+                        name="precio"
+                        value={formData.precio}
+                        onChange={handleChange}
+                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                        placeholder="50000"
+                        min="0"
+                        step="100"
+                        required
+                      />
                     </div>
                   </div>
-                  
-                  {/* Opciones avanzadas */}
-                  <div className="space-y-6">
-                    <div className="bg-gradient-to-r from-gray-50 to-white p-8 rounded-2xl border border-gray-100">
-                      <h3 className="text-2xl font-semibold text-gray-900 mb-8 flex items-center">
-                        <div className="w-3 h-3 bg-lime-400 rounded-full mr-4"></div>
-                        Opciones Avanzadas
-                      </h3>
-                      
-                      {/* Envío gratis */}
-                      <label className="flex items-center space-x-4 p-4 bg-green-50 rounded-2xl cursor-pointer mb-6 border border-green-100 hover:bg-green-100 transition-colors">
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-gray-700 font-semibold mb-2">
+                        Categoría
+                      </label>
+                      <select
+                        name="categoria"
+                        value={formData.categoria}
+                        onChange={handleChange}
+                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                      >
+                        {categorias.map((cat) => (
+                          <option key={cat.value} value={cat.value}>
+                            {cat.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-gray-700 font-semibold mb-2">
+                        Stock disponible
+                      </label>
+                      <input
+                        type="number"
+                        name="stock"
+                        value={formData.stock}
+                        onChange={handleChange}
+                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                        placeholder="100"
+                        min="0"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-2">
+                      Descripción
+                    </label>
+                    <textarea
+                      name="descripcion"
+                      value={formData.descripcion}
+                      onChange={handleChange}
+                      className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 h-32"
+                      placeholder="Descripción detallada del producto..."
+                      required
+                    />
+                  </div>
+
+                  {/* Imagen */}
+                  <div>
+                    <label className="block text-gray-700 font-semibold mb-2">
+                      {isEditMode ? "Cambiar imagen (opcional)" : "Imagen del producto"}
+                    </label>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      name="imagen"
+                      accept="image/*"
+                      className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                      onChange={handleChange}
+                    />
+                    
+                    {/* Imagen actual en modo edición */}
+                    {isEditMode && !previewImage && editingProduct?.imagen && (
+                      <div className="mt-4">
+                        <p className="text-sm text-gray-600 mb-2">Imagen actual:</p>
+                        <img
+                          src={
+                            editingProduct.imagen.startsWith("http")
+                              ? editingProduct.imagen
+                              : `${BASE_URL}${editingProduct.imagen}`
+                          }
+                          alt="Imagen actual"
+                          className="w-40 h-40 object-cover rounded-2xl shadow-lg"
+                        />
+                      </div>
+                    )}
+                    
+                    {/* Preview de nueva imagen */}
+                    {previewImage && (
+                      <div className="mt-4">
+                        <p className="text-sm text-gray-600 mb-2">
+                          {isEditMode ? "Nueva imagen:" : "Vista previa:"}
+                        </p>
+                        <img
+                          src={previewImage}
+                          alt="Preview"
+                          className="w-40 h-40 object-cover rounded-2xl shadow-lg"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Opciones adicionales */}
+                  <div className="bg-gray-50 p-6 rounded-2xl space-y-4">
+                    <h3 className="font-semibold text-gray-800 mb-4">Opciones Adicionales</h3>
+                    
+                    {/* Envío gratis */}
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        name="envioGratis"
+                        checked={formData.envioGratis}
+                        onChange={handleChange}
+                        className="mr-3 w-4 h-4"
+                      />
+                      <label className="text-gray-700">
+                        🚚 Envío gratis
+                      </label>
+                    </div>
+
+                    {/* Descuento */}
+                    <div>
+                      <div className="flex items-center mb-3">
                         <input
                           type="checkbox"
-                          name="envioGratis"
-                          checked={formData.envioGratis}
+                          name="tieneDescuento"
+                          checked={formData.tieneDescuento}
                           onChange={handleChange}
-                          className="w-5 h-5 text-green-600 rounded"
+                          className="mr-3 w-4 h-4"
                         />
-                        <Truck className="text-green-600" size={20} />
-                        <span className="text-green-800 font-semibold text-lg">🚚 Envío Gratis</span>
-                      </label>
-                      
-                      {/* Descuento */}
-                      <div className="p-6 bg-orange-50 rounded-2xl mb-6 border border-orange-100">
-                        <label className="flex items-center space-x-4 mb-4 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            name="tieneDescuento"
-                            checked={formData.tieneDescuento}
-                            onChange={handleChange}
-                            className="w-5 h-5 text-orange-600 rounded"
-                          />
-                          <Tag className="text-orange-600" size={20} />
-                          <span className="text-orange-800 font-semibold text-lg">Tiene Descuento</span>
+                        <label className="text-gray-700">
+                          🏷️ Aplicar descuento
                         </label>
-                        
-                        {formData.tieneDescuento && (
-                          <div className="space-y-4">
+                      </div>
+
+                      {formData.tieneDescuento && (
+                        <div className="ml-7 grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-gray-600 text-sm mb-1">
+                              Porcentaje %
+                            </label>
                             <input
                               type="number"
                               name="porcentajeDescuento"
-                              placeholder="% de descuento"
-                              min="1"
-                              max="100"
-                              className="w-full border-2 border-orange-200 p-3 rounded-2xl focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
-                              onChange={handleChange}
                               value={formData.porcentajeDescuento}
-                              required={formData.tieneDescuento}
+                              onChange={handleChange}
+                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
+                              placeholder="15"
+                              min="1"
+                              max="99"
                             />
-                            <div className="grid grid-cols-2 gap-3">
-                              <input
-                                type="date"
-                                name="fechaInicioDescuento"
-                                placeholder="Fecha inicio"
-                                className="w-full border-2 border-orange-200 p-3 rounded-2xl focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
-                                onChange={handleChange}
-                                value={formData.fechaInicioDescuento}
-                              />
-                              <input
-                                type="date"
-                                name="fechaFinDescuento"
-                                placeholder="Fecha fin"
-                                className="w-full border-2 border-orange-200 p-3 rounded-2xl focus:ring-2 focus:ring-orange-400 focus:border-orange-400"
-                                onChange={handleChange}
-                                value={formData.fechaFinDescuento}
-                              />
-                            </div>
                           </div>
-                        )}
-                      </div>
-                      
-                      {/* Garantía */}
-                      <div className="p-6 bg-blue-50 rounded-2xl border border-blue-100">
-                        <label className="flex items-center space-x-4 mb-4 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            name="tieneGarantia"
-                            checked={formData.tieneGarantia}
-                            onChange={handleChange}
-                            className="w-5 h-5 text-blue-600 rounded"
-                          />
-                          <Shield className="text-blue-600" size={20} />
-                          <span className="text-blue-800 font-semibold text-lg">Tiene Garantía</span>
+                          <div>
+                            <label className="block text-gray-600 text-sm mb-1">
+                              Fecha inicio
+                            </label>
+                            <input
+                              type="date"
+                              name="fechaInicioDescuento"
+                              value={formData.fechaInicioDescuento}
+                              onChange={handleChange}
+                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-gray-600 text-sm mb-1">
+                              Fecha fin
+                            </label>
+                            <input
+                              type="date"
+                              name="fechaFinDescuento"
+                              value={formData.fechaFinDescuento}
+                              onChange={handleChange}
+                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Garantía */}
+                    <div>
+                      <div className="flex items-center mb-3">
+                        <input
+                          type="checkbox"
+                          name="tieneGarantia"
+                          checked={formData.tieneGarantia}
+                          onChange={handleChange}
+                          className="mr-3 w-4 h-4"
+                        />
+                        <label className="text-gray-700">
+                          🛡️ Incluir garantía
                         </label>
-                        
-                        {formData.tieneGarantia && (
-                          <div className="space-y-4">
+                      </div>
+
+                      {formData.tieneGarantia && (
+                        <div className="ml-7 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-gray-600 text-sm mb-1">
+                              Meses de garantía
+                            </label>
                             <input
                               type="number"
                               name="mesesGarantia"
-                              placeholder="Meses de garantía"
-                              min="1"
-                              max="120"
-                              className="w-full border-2 border-blue-200 p-3 rounded-2xl focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-                              onChange={handleChange}
                               value={formData.mesesGarantia}
-                              required={formData.tieneGarantia}
-                            />
-                            <textarea
-                              name="descripcionGarantia"
-                              placeholder="Descripción de la garantía"
-                              className="w-full border-2 border-blue-200 p-3 rounded-2xl focus:ring-2 focus:ring-blue-400 focus:border-blue-400 resize-none"
-                              rows="2"
                               onChange={handleChange}
-                              value={formData.descripcionGarantia}
+                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
+                              placeholder="12"
+                              min="1"
+                              max="60"
                             />
                           </div>
-                        )}
-                      </div>
+                          <div>
+                            <label className="block text-gray-600 text-sm mb-1">
+                              Descripción de garantía
+                            </label>
+                            <input
+                              type="text"
+                              name="descripcionGarantia"
+                              value={formData.descripcionGarantia}
+                              onChange={handleChange}
+                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
+                              placeholder="Garantía contra defectos de fabricación"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-                
-                <button
-                  type="submit"
-                  className="w-full bg-gradient-to-r from-lime-400 to-lime-500 text-black py-4 px-8 rounded-2xl text-xl font-bold hover:from-lime-500 hover:to-lime-600 disabled:opacity-50 transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:scale-105 flex items-center justify-center gap-3"
-                  disabled={loading || serverStatus !== "online"}
-                >
-                  <Save size={24} />
-                  {loading ? 
-                    (isEditMode ? "Actualizando..." : "Subiendo...") : 
-                    (isEditMode ? "Actualizar Producto" : "Crear Producto")
-                  }
-                </button>
-              </form>
+
+                  {/* Botón enviar */}
+                  <div className="flex justify-end pt-6">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className={`px-8 py-4 rounded-2xl font-medium text-white flex items-center gap-3 text-lg shadow-xl transition-all duration-300 ${
+                        loading
+                          ? "bg-gray-400 cursor-not-allowed"
+                          : "bg-gradient-to-r from-lime-400 to-lime-500 hover:from-lime-500 hover:to-lime-600 hover:shadow-2xl transform hover:-translate-y-1"
+                      }`}
+                    >
+                      {loading ? (
+                        <>
+                          <RefreshCw className="animate-spin" size={20} />
+                          {isEditMode ? "Actualizando..." : "Creando..."}
+                        </>
+                      ) : (
+                        <>
+                          {isEditMode ? <Save size={20} /> : <Plus size={20} />}
+                          {isEditMode ? "Actualizar Producto" : "Crear Producto"}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           )}
 
-          {/* Ver Productos - VISTA ACTUALIZADA CON BOTÓN EDITAR */}
+          {/* ===== VER PRODUCTOS ===== */}
           {activeTab === "verProductos" && (
             <div>
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-3xl font-bold text-gray-900">Productos</h2>
+              <div className="mb-8 flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                    📦 Productos Registrados
+                  </h2>
+                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
+                </div>
                 <button
                   onClick={getProductos}
-                  className="bg-blue-500 text-white px-6 py-3 rounded-2xl hover:bg-blue-600 transition-colors flex items-center gap-2 font-medium shadow-lg"
+                  className="bg-lime-500 hover:bg-lime-600 text-white px-6 py-3 rounded-2xl flex items-center gap-2 transition-colors shadow-lg"
                 >
                   <RefreshCw size={18} />
-                  Recargar
+                  Actualizar
                 </button>
               </div>
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+
+              <div className="grid gap-8 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
                 {productos.length === 0 ? (
                   <div className="col-span-full text-center py-12">
                     <Package className="mx-auto text-gray-400 mb-4" size={64} />
@@ -861,131 +858,105 @@ const AdminPanel = () => {
                   productos.map((p) => (
                     <div
                       key={p._id}
-                      className="bg-white p-6 rounded-2xl shadow-lg flex flex-col border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+                      className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300"
                     >
+                      {/* Imagen del producto */}
                       {p.imagen && (
-                        <img
-                          src={
-                            p.imagen.startsWith("http")
-                              ? p.imagen
-                              : `${BASE_URL}${p.imagen}`
-                          }
-                          alt={p.nombre}
-                          className="w-full h-48 object-cover rounded-2xl mb-6"
-                          onError={(e) => {
-                            e.target.style.display = "none";
-                          }}
-                        />
+                        <div className="mb-6">
+                          <img
+                            src={
+                              p.imagen.startsWith("http")
+                                ? p.imagen
+                                : `${BASE_URL}${p.imagen}`
+                            }
+                            alt={p.nombre}
+                            className="w-full h-48 object-cover rounded-2xl shadow-md"
+                            onError={(e) => (e.target.style.display = "none")}
+                          />
+                        </div>
                       )}
-                      
-                      {/* Header con badges */}
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {p.envioGratis && (
-                          <span className="bg-green-100 text-green-800 text-xs px-3 py-1 rounded-full flex items-center gap-1 font-medium">
-                            <Truck size={12} />
-                            Envío Gratis
-                          </span>
-                        )}
-                        {p.descuentoVigente && (
-                          <span className="bg-orange-100 text-orange-800 text-xs px-3 py-1 rounded-full flex items-center gap-1 font-medium">
-                            <Tag size={12} />
-                            -{p.descuento.porcentaje}%
-                          </span>
-                        )}
-                        {p.garantia?.tiene && (
-                          <span className="bg-blue-100 text-blue-800 text-xs px-3 py-1 rounded-full flex items-center gap-1 font-medium">
-                            <Shield size={12} />
-                            Garantía
-                          </span>
-                        )}
-                        <span className="bg-purple-100 text-purple-800 text-xs px-3 py-1 rounded-full font-medium">
-                          {categorias.find(cat => cat.value === p.categoria)?.label || p.categoria}
-                        </span>
-                      </div>
-                      
-                      <h3 className="font-bold text-gray-900 text-xl mb-3">
-                        {p.nombre}
-                      </h3>
-                      
-                      {/* Precios */}
+
                       <div className="mb-4">
-                        {p.descuentoVigente ? (
-                          <div>
-                            <span className="text-2xl font-bold text-green-600">
-                              {formatearPrecio(p.precioConDescuento)}
-                            </span>
-                            <span className="text-sm text-gray-500 line-through ml-2">
-                              {formatearPrecio(p.precio)}
-                            </span>
-                            <div className="text-sm text-green-600 mt-1">
-                              Ahorras: {formatearPrecio(p.ahorroDescuento)}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-2xl font-bold text-gray-900">
+                        <h3 className="font-bold text-gray-900 text-xl mb-2">{p.nombre}</h3>
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-2xl font-bold text-lime-600">
                             {formatearPrecio(p.precio)}
                           </span>
-                        )}
-                      </div>
-                      
-                      <p className="text-gray-600 text-sm flex-1 mb-4">{p.descripcion}</p>
-                      
-                      {/* Información adicional */}
-                      <div className="space-y-2 text-sm text-gray-600 mb-6">
-                        <div className="flex justify-between">
-                          <span>Stock:</span>
-                          <span className={p.stock <= 0 ? "text-red-600 font-medium" : "text-green-600 font-medium"}>
-                            {p.stock || 0} unidades
+                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            p.categoria === 'alimento' ? 'bg-green-100 text-green-800' :
+                            p.categoria === 'juguetes' ? 'bg-purple-100 text-purple-800' :
+                            p.categoria === 'medicamentos' ? 'bg-red-100 text-red-800' :
+                            p.categoria === 'accesorios' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {p.categoria?.toUpperCase()}
                           </span>
                         </div>
+                      </div>
+
+                      <div className="space-y-3 text-sm">
+                        <p className="text-gray-600 line-clamp-3">
+                          {p.descripcion}
+                        </p>
                         
-                        {p.garantia?.tiene && (
-                          <div className="flex justify-between">
-                            <span>Garantía:</span>
-                            <span className="font-medium">{p.garantia.meses} meses</span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-gray-50 p-2 rounded-xl">
+                            <span className="font-semibold text-gray-700 block">Stock:</span>
+                            <p className="text-gray-900">{p.stock || "No especificado"}</p>
+                          </div>
+                          
+                          {p.descuento?.tiene && (
+                            <div className="bg-red-50 p-2 rounded-xl">
+                              <span className="font-semibold text-red-700 block">Descuento:</span>
+                              <p className="text-red-900">{p.descuento.porcentaje}% OFF</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {p.envioGratis && (
+                          <div className="bg-green-50 p-2 rounded-xl">
+                            <span className="text-green-800 font-medium flex items-center gap-2">
+                              <Truck size={16} />
+                              Envío gratis
+                            </span>
                           </div>
                         )}
-                        
-                        {p.descuento?.tiene && (
-                          <div className="text-xs">
-                            <div className="flex justify-between">
-                              <span>Descuento:</span>
-                              <span className="font-medium">{p.descuento.porcentaje}%</span>
-                            </div>
-                            {p.descuento.fechaInicio && (
-                              <div className="text-gray-500">
-                                Desde: {formatearFecha(p.descuento.fechaInicio)}
-                              </div>
-                            )}
-                            {p.descuento.fechaFin && (
-                              <div className="text-gray-500">
-                                Hasta: {formatearFecha(p.descuento.fechaFin)}
-                              </div>
-                            )}
+
+                        {p.garantia?.tiene && (
+                          <div className="bg-blue-50 p-2 rounded-xl">
+                            <span className="text-blue-800 font-medium flex items-center gap-2">
+                              <Shield size={16} />
+                              Garantía {p.garantia.meses} meses
+                            </span>
                           </div>
                         )}
                       </div>
-                      
-                      {/* BOTONES DE ACCIÓN ACTUALIZADOS */}
-                      <div className="mt-auto space-y-3">
-                        <p className="text-xs text-gray-400 text-center">ID: {p._id}</p>
-                        
-                        {/* NUEVO BOTÓN EDITAR */}
+
+                      {/* Botones de acción */}
+                      <div className="flex gap-2 mt-6">
                         <button
                           onClick={() => startEditProduct(p)}
-                          className="w-full bg-blue-500 text-white px-4 py-3 rounded-xl hover:bg-blue-600 transition-colors font-medium flex items-center justify-center gap-2 shadow-md"
+                          className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-2xl flex items-center justify-center gap-2 transition-colors"
                         >
                           <Edit3 size={16} />
                           Editar
                         </button>
-                        
                         <button
                           onClick={() => eliminarProducto(p._id)}
-                          className="w-full bg-red-500 text-white px-4 py-3 rounded-xl hover:bg-red-600 transition-colors font-medium flex items-center justify-center gap-2 shadow-md"
+                          className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-2xl flex items-center justify-center gap-2 transition-colors"
                         >
                           <Trash2 size={16} />
                           Eliminar
                         </button>
+                      </div>
+
+                      <div className="pt-4 mt-4 border-t border-gray-200">
+                        <p className="text-xs text-gray-400">ID: {p._id}</p>
+                        {p.createdAt && (
+                          <p className="text-xs text-gray-400">
+                            Creado: {new Date(p.createdAt).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))
@@ -994,19 +965,25 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* Ver Usuarios */}
-          {activeTab === "verUsuarios" && !selectedUser && (
+          {/* ===== VER USUARIOS ===== */}
+          {activeTab === "verUsuarios" && (
             <div>
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-3xl font-bold text-gray-900">Usuarios</h2>
+              <div className="mb-8 flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                    👥 Usuarios Registrados
+                  </h2>
+                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
+                </div>
                 <button
                   onClick={getUsuarios}
-                  className="bg-blue-500 text-white px-6 py-3 rounded-2xl hover:bg-blue-600 transition-colors flex items-center gap-2 font-medium shadow-lg"
+                  className="bg-lime-500 hover:bg-lime-600 text-white px-6 py-3 rounded-2xl flex items-center gap-2 transition-colors shadow-lg"
                 >
                   <RefreshCw size={18} />
-                  Recargar
+                  Actualizar
                 </button>
               </div>
+
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {usuarios.length === 0 ? (
                   <div className="col-span-full text-center py-12">
@@ -1034,16 +1011,46 @@ const AdminPanel = () => {
                           {u.role?.toUpperCase()}
                         </span>
                       </div>
-                      <h3 className="font-bold text-gray-900 text-lg mb-2">{u.name}</h3>
-                      <p className="text-gray-600 mb-4">{u.email}</p>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-500">Mascotas:</span>
-                        <span className="font-semibold text-gray-900">{u.totalMascotas || 0}</span>
-                      </div>
-                      <div className="mt-4 pt-4 border-t border-gray-100">
-                        <div className="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 py-2 rounded-xl transition-colors flex items-center justify-center gap-2">
-                          <Eye size={16} />
-                          <span className="text-sm font-medium">Ver detalles</span>
+
+                      <div>
+                        <h3 className="font-bold text-gray-900 text-xl mb-2">{u.name}</h3>
+                        <div className="space-y-2 text-sm">
+                          <div className="bg-gray-50 p-3 rounded-xl">
+                            <span className="font-semibold text-gray-700 block mb-1">Email:</span>
+                            <p className="text-gray-900 break-all">{u.email}</p>
+                          </div>
+                          
+                          {u.telefono && (
+                            <div className="bg-gray-50 p-3 rounded-xl">
+                              <span className="font-semibold text-gray-700 block mb-1">Teléfono:</span>
+                              <p className="text-gray-900">{u.telefono}</p>
+                            </div>
+                          )}
+                          
+                          {u.direccion && (
+                            <div className="bg-gray-50 p-3 rounded-xl">
+                              <span className="font-semibold text-gray-700 block mb-1">Dirección:</span>
+                              <p className="text-gray-900">
+                                {u.direccion.ciudad}, {u.direccion.estado}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <p className="text-xs text-gray-400">ID: {u._id}</p>
+                          {u.createdAt && (
+                            <p className="text-xs text-gray-400">
+                              Registro: {new Date(u.createdAt).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-center">
+                          <span className="text-sm text-purple-600 font-medium flex items-center gap-2">
+                            <Eye size={16} />
+                            Click para ver mascotas
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1053,43 +1060,45 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* Ver Citas */}
+          {/* ===== VER CITAS ===== */}
           {activeTab === "verCitas" && (
             <div>
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-3xl font-bold text-gray-900">Citas</h2>
+              <div className="mb-8 flex justify-between items-center">
+                <div>
+                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                    📅 Citas Agendadas
+                  </h2>
+                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
+                </div>
                 <button
                   onClick={getCitas}
-                  className="bg-blue-500 text-white px-6 py-3 rounded-2xl hover:bg-blue-600 transition-colors flex items-center gap-2 font-medium shadow-lg"
+                  className="bg-lime-500 hover:bg-lime-600 text-white px-6 py-3 rounded-2xl flex items-center gap-2 transition-colors shadow-lg"
                 >
                   <RefreshCw size={18} />
-                  Recargar
+                  Actualizar
                 </button>
               </div>
-              <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
+
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {citas.length === 0 ? (
                   <div className="col-span-full text-center py-12">
                     <Calendar className="mx-auto text-gray-400 mb-4" size={64} />
-                    <p className="text-gray-600 text-xl">No hay citas registradas</p>
+                    <p className="text-gray-600 text-xl">No hay citas agendadas</p>
                   </div>
                 ) : (
                   citas.map((c) => (
                     <div
                       key={c._id}
-                      className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-shadow duration-300"
+                      className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300"
                     >
-                      <div className="flex justify-between items-start mb-6">
-                        <div>
-                          <h3 className="font-bold text-gray-900 text-xl mb-1">
-                            {c.usuario?.name || "Usuario no especificado"}
-                          </h3>
-                          <p className="text-gray-600">{c.usuario?.email}</p>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-gradient-to-r from-indigo-400 to-indigo-500 rounded-2xl flex items-center justify-center">
+                          <Calendar className="text-white" size={20} />
                         </div>
-                        <span className={`px-3 py-2 rounded-full text-xs font-medium ${
-                          c.estado === "confirmada" ? "bg-green-100 text-green-800" :
-                          c.estado === "pendiente" ? "bg-yellow-100 text-yellow-800" :
-                          c.estado === "cancelada" ? "bg-red-100 text-red-800" :
-                          "bg-gray-100 text-gray-800"
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          c.estado === 'confirmada' ? 'bg-green-100 text-green-800' :
+                          c.estado === 'cancelada' ? 'bg-red-100 text-red-800' :
+                          'bg-gray-100 text-gray-800'
                         }`}>
                           {c.estado?.toUpperCase() || "PENDIENTE"}
                         </span>
@@ -1099,7 +1108,9 @@ const AdminPanel = () => {
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div className="bg-gray-50 p-3 rounded-xl">
                             <span className="font-semibold text-gray-700 block mb-1">Fecha:</span>
-                            <p className="text-gray-900">{c.fecha ? new Date(c.fecha).toLocaleDateString() : "No especificada"}</p>
+                            <p className="text-gray-900">
+                              {c.fecha ? new Date(c.fecha).toLocaleDateString() : "No especificada"}
+                            </p>
                           </div>
                           <div className="bg-gray-50 p-3 rounded-xl">
                             <span className="font-semibold text-gray-700 block mb-1">Hora:</span>
@@ -1131,7 +1142,9 @@ const AdminPanel = () => {
                         <div className="pt-4 border-t border-gray-200">
                           <p className="text-xs text-gray-400">ID: {c._id}</p>
                           {c.createdAt && (
-                            <p className="text-xs text-gray-400">Creada: {new Date(c.createdAt).toLocaleString()}</p>
+                            <p className="text-xs text-gray-400">
+                              Creada: {new Date(c.createdAt).toLocaleString()}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -1142,13 +1155,14 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* Detalle Usuario */}
+          {/* ===== DETALLE USUARIO ===== */}
           {activeTab === "detalleUsuario" && selectedUser && (
             <div>
               <button
                 onClick={() => {
                   setActiveTab("verUsuarios");
                   setSelectedUser(null);
+                  setMascotasUsuario([]);
                 }}
                 className="mb-8 bg-gray-200 px-6 py-3 rounded-2xl hover:bg-gray-300 transition-colors flex items-center gap-2 font-medium"
               >
@@ -1156,9 +1170,12 @@ const AdminPanel = () => {
                 Volver a Usuarios
               </button>
 
-              <h2 className="text-3xl font-bold text-gray-900 mb-8">
-                Mascotas de {selectedUser.name}
-              </h2>
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 mb-2">
+                  🐾 Mascotas de {selectedUser.name}
+                </h2>
+                <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
+              </div>
 
               <div className="grid gap-8 md:grid-cols-1 lg:grid-cols-2">
                 {mascotasUsuario.length === 0 ? (
@@ -1198,7 +1215,9 @@ const AdminPanel = () => {
                         <div className="grid grid-cols-2 gap-6 text-sm">
                           <div>
                             <span className="font-semibold text-gray-700 block mb-1">Edad:</span>
-                            <p className="text-gray-900">{m.edad ? `${m.edad} años` : "No especificada"}</p>
+                            <p className="text-gray-900">
+                              {m.edad ? `${m.edad} años` : "No especificada"}
+                            </p>
                           </div>
                           <div>
                             <span className="font-semibold text-gray-700 block mb-1">Género:</span>
@@ -1213,6 +1232,7 @@ const AdminPanel = () => {
                             <p className="text-gray-900">{m.enfermedades || "Ninguna"}</p>
                           </div>
                         </div>
+                        
                         {m.historial && (
                           <div className="mt-6">
                             <span className="font-semibold text-gray-700 block mb-2">Historial:</span>
@@ -1223,96 +1243,63 @@ const AdminPanel = () => {
 
                       {/* Sección de vacunas */}
                       <div className="mb-8">
-                        <h4 className="font-semibold text-green-700 mb-4 text-xl">Vacunas</h4>
+                        <h4 className="font-semibold text-green-700 mb-4 text-xl">💉 Vacunas</h4>
                         {m.vacunas && m.vacunas.length > 0 ? (
-                          <div className="space-y-3 mb-6">
-                            {m.vacunas.map((v, idx) => (
-                              <div key={idx} className="flex justify-between items-center p-3 bg-green-50 rounded-xl">
-                                <span className="font-medium text-green-800">{v.nombre}</span>
-                                <span className="text-green-600 text-sm">{new Date(v.fecha).toLocaleDateString()}</span>
+                          <div className="space-y-3">
+                            {m.vacunas.map((vacuna, idx) => (
+                              <div key={idx} className="bg-green-50 p-4 rounded-xl border border-green-200">
+                                <div className="flex justify-between items-start mb-2">
+                                  <h5 className="font-semibold text-green-800">{vacuna.nombre}</h5>
+                                  {vacuna.fecha && (
+                                    <span className="text-sm text-green-600 bg-green-100 px-2 py-1 rounded-lg">
+                                      {formatearFecha(vacuna.fecha)}
+                                    </span>
+                                  )}
+                                </div>
+                                {vacuna.notas && (
+                                  <p className="text-green-700 text-sm">{vacuna.notas}</p>
+                                )}
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-gray-500 mb-6">No hay vacunas registradas</p>
+                          <p className="text-gray-500 italic">No hay vacunas registradas</p>
                         )}
-                        <form
-                          className="grid grid-cols-1 md:grid-cols-3 gap-3"
-                          onSubmit={(e) => handleAgregarVacuna(e, m._id)}
-                        >
-                          <input
-                            type="text"
-                            name="nombre"
-                            placeholder="Nombre vacuna"
-                            className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-green-400 focus:border-green-400"
-                            required
-                          />
-                          <input
-                            type="date"
-                            name="fecha"
-                            className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-green-400 focus:border-green-400"
-                            required
-                          />
-                          <button
-                            type="submit"
-                            className="bg-green-500 text-white px-6 py-3 rounded-xl hover:bg-green-600 text-sm font-medium transition-colors"
-                          >
-                            Agregar Vacuna
-                          </button>
-                        </form>
                       </div>
 
                       {/* Sección de operaciones */}
                       <div>
-                        <h4 className="font-semibold text-blue-700 mb-4 text-xl">Operaciones</h4>
+                        <h4 className="font-semibold text-orange-700 mb-4 text-xl">🏥 Operaciones</h4>
                         {m.operaciones && m.operaciones.length > 0 ? (
-                          <div className="space-y-4 mb-6">
+                          <div className="space-y-3">
                             {m.operaciones.map((op, idx) => (
-                              <div key={idx} className="p-4 bg-blue-50 rounded-xl">
+                              <div key={idx} className="bg-orange-50 p-4 rounded-xl border border-orange-200">
                                 <div className="flex justify-between items-start mb-2">
-                                  <span className="font-medium text-blue-800">{op.nombre}</span>
-                                  <span className="text-blue-600 text-sm">{new Date(op.fecha).toLocaleDateString()}</span>
+                                  <h5 className="font-semibold text-orange-800">{op.nombre}</h5>
+                                  {op.fecha && (
+                                    <span className="text-sm text-orange-600 bg-orange-100 px-2 py-1 rounded-lg">
+                                      {formatearFecha(op.fecha)}
+                                    </span>
+                                  )}
                                 </div>
-                                <p className="text-blue-700 text-sm">{op.descripcion}</p>
+                                {op.notas && (
+                                  <p className="text-orange-700 text-sm">{op.notas}</p>
+                                )}
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-gray-500 mb-6">No hay operaciones registradas</p>
+                          <p className="text-gray-500 italic">No hay operaciones registradas</p>
                         )}
-                        <form
-                          className="space-y-3"
-                          onSubmit={(e) => handleAgregarOperacion(e, m._id)}
-                        >
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <input
-                              type="text"
-                              name="nombre"
-                              placeholder="Nombre operación"
-                              className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-                              required
-                            />
-                            <input
-                              type="date"
-                              name="fecha"
-                              className="border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-                              required
-                            />
-                          </div>
-                          <textarea
-                            name="descripcion"
-                            placeholder="Descripción de la operación"
-                            className="w-full border-2 border-gray-200 rounded-xl px-4 py-3 text-sm resize-none focus:ring-2 focus:ring-blue-400 focus:border-blue-400"
-                            rows="3"
-                            required
-                          />
-                          <button
-                            type="submit"
-                            className="w-full bg-blue-500 text-white px-6 py-3 rounded-xl hover:bg-blue-600 text-sm font-medium transition-colors"
-                          >
-                            Agregar Operación
-                          </button>
-                        </form>
+                      </div>
+
+                      <div className="pt-6 mt-6 border-t border-gray-200">
+                        <p className="text-xs text-gray-400">ID: {m._id}</p>
+                        {m.createdAt && (
+                          <p className="text-xs text-gray-400">
+                            Registrada: {new Date(m.createdAt).toLocaleString()}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))
@@ -1327,4 +1314,3 @@ const AdminPanel = () => {
 };
 
 export default AdminPanel;
-                            
