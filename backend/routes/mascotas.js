@@ -1,17 +1,61 @@
 const express = require('express');
 const router = express.Router();
 
-// Importar modelos, middlewares y utilidades
+// Importar modelos y middlewares básicos
 const Mascota = require('../models/Mascota');
 const User = require('../models/User');
-const { verifyToken, isAdmin, isOwnerOrAdmin } = require('../middleware/auth');
-const { uploadSingle, validateUploadedFiles } = require('../middleware/upload');
-const { validatePetData, validateObjectId, validatePagination } = require('../utils/validators');
+const { verifyToken, isAdmin } = require('../middleware/auth');
 
 console.log('🐾 Rutas de mascotas cargadas');
 
+// Función de validación simple para ObjectId
+const isValidObjectId = (id) => {
+  return id && id.match(/^[0-9a-fA-F]{24}$/);
+};
+
+// Función de validación simple para datos de mascota
+const validatePetData = (data) => {
+  const { nombre, especie, raza, edad, genero, estado } = data;
+  const errors = [];
+
+  if (!nombre || nombre.trim().length < 1) {
+    errors.push('El nombre es requerido');
+  }
+  if (!especie) {
+    errors.push('La especie es requerida');
+  }
+  if (!raza || raza.trim().length < 1) {
+    errors.push('La raza es requerida');
+  }
+  if (!edad && edad !== 0) {
+    errors.push('La edad es requerida');
+  }
+  if (!genero) {
+    errors.push('El género es requerido');
+  }
+  if (!estado) {
+    errors.push('El estado es requerido');
+  }
+
+  return {
+    isValid: errors.length === 0,
+    message: errors.join(', ')
+  };
+};
+
+// Función simple de paginación
+const validatePagination = (page, limit) => {
+  const pageNum = parseInt(page) || 1;
+  const limitNum = parseInt(limit) || 10;
+  
+  return {
+    page: Math.max(1, pageNum),
+    limit: Math.min(Math.max(1, limitNum), 50)
+  };
+};
+
 // 📝 CREAR NUEVA MASCOTA
-router.post('/', verifyToken, uploadSingle('imagen'), validateUploadedFiles, async (req, res) => {
+router.post('/', verifyToken, async (req, res) => {
   try {
     const { 
       nombre, especie, raza, edad, unidadEdad, genero, estado, peso, color,
@@ -61,7 +105,7 @@ router.post('/', verifyToken, uploadSingle('imagen'), validateUploadedFiles, asy
         telefono: contactoEmergencia.telefono?.trim(),
         relacion: contactoEmergencia.relacion?.trim()
       } : undefined,
-      imagen: req.file ? req.file.url : '',
+      imagen: req.body.imagen || '',
       usuario: req.user.id
     });
 
@@ -124,210 +168,186 @@ router.get('/', verifyToken, async (req, res) => {
     }
 
     // Consultar mascotas con paginación
+    const skip = (page - 1) * limit;
+    
     const [mascotas, totalCount] = await Promise.all([
       Mascota.find(query)
         .populate('usuario', 'name email telefono')
         .sort({ createdAt: -1 })
-        .skip(page - 1)
-        .limit(limit)
-        .lean(),
+        .skip(skip)
+        .limit(limit),
       Mascota.countDocuments(query)
     ]);
 
-    console.log('📋 Mascotas encontradas:', mascotas.length);
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    console.log(`✅ ${mascotas.length} mascotas obtenidas de ${totalCount} totales`);
 
     res.json({
-      success: true,
       mascotas,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalCount / limit),
-        totalItems: totalCount,
-        itemsPerPage: limit,
-        hasNextPage: page < Math.ceil(totalCount / limit),
-        hasPrevPage: page > 1
+        totalPages,
+        totalCount,
+        hasNextPage,
+        hasPrevPage,
+        limit
       }
     });
 
   } catch (error) {
     console.error('❌ Error obteniendo mascotas:', error);
     res.status(500).json({
-      error: 'Error obteniendo mascotas',
-      code: 'FETCH_ERROR'
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
     });
   }
 });
 
-// 🔍 OBTENER MASCOTA ESPECÍFICA
+// 🐾 OBTENER MASCOTAS DE UN USUARIO ESPECÍFICO (para admin)
+router.get('/usuario/:userId', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    console.log('🐾 Admin obteniendo mascotas del usuario:', userId);
+
+    // Validar ID de usuario
+    if (!isValidObjectId(userId)) {
+      return res.status(400).json({
+        error: 'ID de usuario inválido',
+        code: 'INVALID_USER_ID'
+      });
+    }
+
+    // Verificar que el usuario existe
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        error: 'Usuario no encontrado',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    // Obtener mascotas del usuario
+    const mascotas = await Mascota.find({ 
+      usuario: userId, 
+      activo: true 
+    })
+    .populate('usuario', 'name email telefono')
+    .sort({ createdAt: -1 });
+
+    console.log(`✅ ${mascotas.length} mascotas encontradas para usuario ${user.name}`);
+
+    res.json(mascotas);
+
+  } catch (error) {
+    console.error('❌ Error obteniendo mascotas de usuario:', error);
+    res.status(500).json({
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// 👁️ OBTENER UNA MASCOTA ESPECÍFICA
 router.get('/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validar ID
-    const idValidation = validateObjectId(id);
-    if (!idValidation.isValid) {
+    console.log('👁️ Obteniendo mascota:', id);
+
+    // Validar ObjectId
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
-        error: idValidation.message,
-        code: 'INVALID_ID'
+        error: 'ID de mascota inválido',
+        code: 'INVALID_PET_ID'
       });
     }
 
-    console.log('🔍 Obteniendo mascota:', id);
+    // Buscar mascota
+    const mascota = await Mascota.findById(id)
+      .populate('usuario', 'name email telefono');
 
-    const mascota = await Mascota.findById(id).populate('usuario', 'name email telefono');
-    
     if (!mascota) {
       return res.status(404).json({
         error: 'Mascota no encontrada',
-        code: 'MASCOTA_NOT_FOUND'
+        code: 'PET_NOT_FOUND'
       });
     }
 
-    // Verificar permisos
+    // Verificar que el usuario es propietario o admin
     if (req.user.role !== 'admin' && mascota.usuario._id.toString() !== req.user.id) {
       return res.status(403).json({
         error: 'No autorizado para ver esta mascota',
-        code: 'UNAUTHORIZED'
+        code: 'NOT_AUTHORIZED'
       });
     }
 
-    res.json({
-      success: true,
-      mascota
-    });
+    console.log('✅ Mascota obtenida exitosamente');
+
+    res.json(mascota);
 
   } catch (error) {
     console.error('❌ Error obteniendo mascota:', error);
     res.status(500).json({
-      error: 'Error obteniendo mascota',
-      code: 'FETCH_ERROR'
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
     });
   }
 });
 
 // ✏️ ACTUALIZAR MASCOTA
-router.put('/:id', verifyToken, uploadSingle('imagen'), validateUploadedFiles, async (req, res) => {
+router.put('/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
+    const updateData = req.body;
     
-    // Validar ID
-    const idValidation = validateObjectId(id);
-    if (!idValidation.isValid) {
+    console.log('✏️ Actualizando mascota:', id);
+
+    // Validar ObjectId
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
-        error: idValidation.message,
-        code: 'INVALID_ID'
+        error: 'ID de mascota inválido',
+        code: 'INVALID_PET_ID'
       });
     }
 
+    // Buscar mascota
     const mascota = await Mascota.findById(id);
-    
     if (!mascota) {
       return res.status(404).json({
         error: 'Mascota no encontrada',
-        code: 'MASCOTA_NOT_FOUND'
+        code: 'PET_NOT_FOUND'
       });
     }
 
-    // Verificar permisos
+    // Verificar que el usuario es propietario o admin
     if (req.user.role !== 'admin' && mascota.usuario.toString() !== req.user.id) {
       return res.status(403).json({
-        error: 'No autorizado para editar esta mascota',
-        code: 'UNAUTHORIZED'
+        error: 'No autorizado para modificar esta mascota',
+        code: 'NOT_AUTHORIZED'
       });
     }
 
-    const {
-      nombre, especie, raza, edad, unidadEdad, genero, estado, peso, color,
-      enfermedades, alergias, medicamentos, historial,
-      esterilizado, fechaEsterilizacion,
-      microchip, fechaImplante,
-      contactoEmergencia
-    } = req.body;
+    // Actualizar campos permitidos
+    const allowedFields = [
+      'nombre', 'especie', 'raza', 'edad', 'unidadEdad', 'genero', 'estado',
+      'peso', 'color', 'enfermedades', 'alergias', 'medicamentos', 'historial',
+      'esterilizado', 'fechaEsterilizacion', 'microchip', 'contactoEmergencia', 'imagen'
+    ];
 
-    console.log('✏️ Actualizando mascota:', id);
-
-    // Validar datos si se proporcionan
-    if (nombre || especie || raza || edad !== undefined || genero || estado) {
-      const petData = {
-        nombre: nombre || mascota.nombre,
-        especie: especie || mascota.especie,
-        raza: raza || mascota.raza,
-        edad: edad !== undefined ? parseInt(edad) : mascota.edad,
-        genero: genero || mascota.genero,
-        estado: estado || mascota.estado
-      };
-      
-      const validation = validatePetData(petData);
-      if (!validation.isValid) {
-        return res.status(400).json({
-          error: 'Datos de mascota inválidos',
-          details: validation.message,
-          code: 'INVALID_PET_DATA'
-        });
+    allowedFields.forEach(field => {
+      if (updateData[field] !== undefined) {
+        mascota[field] = updateData[field];
       }
-    }
-
-    // Actualizar campos
-    if (nombre && nombre.trim()) mascota.nombre = nombre.trim();
-    if (especie) mascota.especie = especie;
-    if (raza && raza.trim()) mascota.raza = raza.trim();
-    if (edad !== undefined) mascota.edad = parseInt(edad);
-    if (unidadEdad) mascota.unidadEdad = unidadEdad;
-    if (genero) mascota.genero = genero;
-    if (estado) mascota.estado = estado;
-    if (peso !== undefined) mascota.peso = peso ? parseFloat(peso) : null;
-    if (color !== undefined) mascota.color = color ? color.trim() : null;
-    
-    // Campos médicos
-    if (enfermedades !== undefined) mascota.enfermedades = enfermedades.trim();
-    if (alergias !== undefined) mascota.alergias = alergias.trim();
-    if (medicamentos !== undefined) mascota.medicamentos = medicamentos.trim();
-    if (historial !== undefined) mascota.historial = historial.trim();
-    
-    // Información adicional
-    if (esterilizado !== undefined) {
-      mascota.esterilizado = esterilizado === 'true' || esterilizado === true;
-    }
-    
-    if (fechaEsterilizacion) {
-      mascota.fechaEsterilizacion = new Date(fechaEsterilizacion);
-    }
-    
-    // Microchip
-    if (microchip !== undefined) {
-      if (microchip && typeof microchip === 'object') {
-        mascota.microchip = {
-          numero: microchip.numero?.toString().trim() || '',
-          fechaImplante: fechaImplante ? new Date(fechaImplante) : mascota.microchip?.fechaImplante
-        };
-      } else if (microchip) {
-        mascota.microchip = {
-          numero: microchip.toString().trim(),
-          fechaImplante: fechaImplante ? new Date(fechaImplante) : undefined
-        };
-      }
-    }
-    
-    // Contacto de emergencia
-    if (contactoEmergencia !== undefined) {
-      if (contactoEmergencia && typeof contactoEmergencia === 'object') {
-        mascota.contactoEmergencia = {
-          nombre: contactoEmergencia.nombre?.trim() || '',
-          telefono: contactoEmergencia.telefono?.trim() || '',
-          relacion: contactoEmergencia.relacion?.trim() || ''
-        };
-      }
-    }
-
-    // Actualizar imagen si se subió nueva
-    if (req.file) {
-      mascota.imagen = req.file.url;
-    }
+    });
 
     await mascota.save();
     await mascota.populate('usuario', 'name email telefono');
 
-    console.log('✅ Mascota actualizada exitosamente:', mascota._id);
+    console.log('✅ Mascota actualizada exitosamente');
 
     res.json({
       success: true,
@@ -348,48 +368,49 @@ router.put('/:id', verifyToken, uploadSingle('imagen'), validateUploadedFiles, a
     }
     
     res.status(500).json({
-      error: 'Error actualizando mascota',
-      code: 'UPDATE_ERROR'
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
     });
   }
 });
 
-// 🗑️ ELIMINAR MASCOTA (marcar como inactiva)
+// 🗑️ ELIMINAR MASCOTA (soft delete)
 router.delete('/:id', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Validar ID
-    const idValidation = validateObjectId(id);
-    if (!idValidation.isValid) {
+    console.log('🗑️ Eliminando mascota:', id);
+
+    // Validar ObjectId
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
-        error: idValidation.message,
-        code: 'INVALID_ID'
+        error: 'ID de mascota inválido',
+        code: 'INVALID_PET_ID'
       });
     }
 
+    // Buscar mascota
     const mascota = await Mascota.findById(id);
-    
     if (!mascota) {
       return res.status(404).json({
         error: 'Mascota no encontrada',
-        code: 'MASCOTA_NOT_FOUND'
+        code: 'PET_NOT_FOUND'
       });
     }
 
-    // Verificar permisos
+    // Verificar que el usuario es propietario o admin
     if (req.user.role !== 'admin' && mascota.usuario.toString() !== req.user.id) {
       return res.status(403).json({
         error: 'No autorizado para eliminar esta mascota',
-        code: 'UNAUTHORIZED'
+        code: 'NOT_AUTHORIZED'
       });
     }
 
-    // Marcar como inactiva en lugar de eliminar
+    // Soft delete
     mascota.activo = false;
     await mascota.save();
 
-    console.log('✅ Mascota marcada como inactiva:', mascota._id);
+    console.log('✅ Mascota eliminada exitosamente');
 
     res.json({
       success: true,
@@ -399,240 +420,196 @@ router.delete('/:id', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('❌ Error eliminando mascota:', error);
     res.status(500).json({
-      error: 'Error eliminando mascota',
-      code: 'DELETE_ERROR'
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
     });
   }
 });
 
-// 💉 AGREGAR VACUNA
+// 💉 AGREGAR VACUNA A MASCOTA
 router.post('/:id/vacunas', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, fecha, veterinario, proximaDosis, notas, imagen } = req.body;
+    const { nombre, fecha, veterinario, proximaDosis, notas } = req.body;
 
-    // Validar ID
-    const idValidation = validateObjectId(id);
-    if (!idValidation.isValid) {
+    console.log('💉 Agregando vacuna a mascota:', id);
+
+    // Validar ObjectId
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
-        error: idValidation.message,
-        code: 'INVALID_ID'
+        error: 'ID de mascota inválido',
+        code: 'INVALID_PET_ID'
       });
     }
 
-    // Validaciones
-    if (!nombre || !fecha) {
-      return res.status(400).json({
-        error: 'Nombre y fecha de la vacuna son obligatorios',
-        code: 'MISSING_REQUIRED_FIELDS'
-      });
-    }
-
+    // Buscar mascota
     const mascota = await Mascota.findById(id);
     if (!mascota) {
       return res.status(404).json({
         error: 'Mascota no encontrada',
-        code: 'MASCOTA_NOT_FOUND'
+        code: 'PET_NOT_FOUND'
       });
     }
 
-    // Verificar permisos
+    // Verificar que el usuario es propietario o admin
     if (req.user.role !== 'admin' && mascota.usuario.toString() !== req.user.id) {
       return res.status(403).json({
-        error: 'No autorizado para agregar vacunas a esta mascota',
-        code: 'UNAUTHORIZED'
+        error: 'No autorizado para modificar esta mascota',
+        code: 'NOT_AUTHORIZED'
       });
     }
 
-    // Agregar vacuna
+    // Validar datos requeridos
+    if (!nombre || !fecha) {
+      return res.status(400).json({
+        error: 'Nombre y fecha de la vacuna son requeridos',
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+
+    // Crear nueva vacuna
     const nuevaVacuna = {
       nombre: nombre.trim(),
       fecha: new Date(fecha),
-      veterinario: veterinario ? veterinario.trim() : undefined,
+      veterinario: veterinario?.trim(),
       proximaDosis: proximaDosis ? new Date(proximaDosis) : undefined,
-      notas: notas ? notas.trim() : undefined,
-      imagen: imagen || ''
+      notas: notas?.trim()
     };
 
-    await mascota.agregarVacuna(nuevaVacuna);
+    // Agregar vacuna al array
+    mascota.vacunas.push(nuevaVacuna);
+    await mascota.save();
 
-    console.log('💉 Vacuna agregada a mascota:', mascota._id);
+    console.log('✅ Vacuna agregada exitosamente');
 
     res.json({
       success: true,
       message: 'Vacuna agregada exitosamente',
-      mascota
+      mascota: await mascota.populate('usuario', 'name email')
     });
 
   } catch (error) {
     console.error('❌ Error agregando vacuna:', error);
     res.status(500).json({
-      error: 'Error agregando vacuna',
-      code: 'ADD_VACCINE_ERROR'
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
     });
   }
 });
 
-// 🏥 AGREGAR OPERACIÓN
+// 🏥 AGREGAR OPERACIÓN A MASCOTA
 router.post('/:id/operaciones', verifyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, descripcion, fecha, veterinario, costo, estado, notas, imagen } = req.body;
+    const { nombre, descripcion, fecha, veterinario, costo, estado, notas } = req.body;
 
-    // Validar ID
-    const idValidation = validateObjectId(id);
-    if (!idValidation.isValid) {
+    console.log('🏥 Agregando operación a mascota:', id);
+
+    // Validar ObjectId
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
-        error: idValidation.message,
-        code: 'INVALID_ID'
+        error: 'ID de mascota inválido',
+        code: 'INVALID_PET_ID'
       });
     }
 
-    // Validaciones
-    if (!nombre || !descripcion || !fecha) {
-      return res.status(400).json({
-        error: 'Nombre, descripción y fecha de la operación son obligatorios',
-        code: 'MISSING_REQUIRED_FIELDS'
-      });
-    }
-
+    // Buscar mascota
     const mascota = await Mascota.findById(id);
     if (!mascota) {
       return res.status(404).json({
         error: 'Mascota no encontrada',
-        code: 'MASCOTA_NOT_FOUND'
+        code: 'PET_NOT_FOUND'
       });
     }
 
-    // Verificar permisos
+    // Verificar que el usuario es propietario o admin
     if (req.user.role !== 'admin' && mascota.usuario.toString() !== req.user.id) {
       return res.status(403).json({
-        error: 'No autorizado para agregar operaciones a esta mascota',
-        code: 'UNAUTHORIZED'
+        error: 'No autorizado para modificar esta mascota',
+        code: 'NOT_AUTHORIZED'
       });
     }
 
-    // Agregar operación
+    // Validar datos requeridos
+    if (!nombre || !descripcion || !fecha) {
+      return res.status(400).json({
+        error: 'Nombre, descripción y fecha de la operación son requeridos',
+        code: 'MISSING_REQUIRED_FIELDS'
+      });
+    }
+
+    // Crear nueva operación
     const nuevaOperacion = {
       nombre: nombre.trim(),
       descripcion: descripcion.trim(),
       fecha: new Date(fecha),
-      veterinario: veterinario ? veterinario.trim() : undefined,
+      veterinario: veterinario?.trim(),
       costo: costo ? parseFloat(costo) : undefined,
       estado: estado || 'completada',
-      notas: notas ? notas.trim() : undefined,
-      imagen: imagen || ''
+      notas: notas?.trim()
     };
 
-    await mascota.agregarOperacion(nuevaOperacion);
+    // Agregar operación al array
+    mascota.operaciones.push(nuevaOperacion);
+    await mascota.save();
 
-    console.log('🏥 Operación agregada a mascota:', mascota._id);
+    console.log('✅ Operación agregada exitosamente');
 
     res.json({
       success: true,
       message: 'Operación agregada exitosamente',
-      mascota
+      mascota: await mascota.populate('usuario', 'name email')
     });
 
   } catch (error) {
     console.error('❌ Error agregando operación:', error);
     res.status(500).json({
-      error: 'Error agregando operación',
-      code: 'ADD_OPERATION_ERROR'
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
     });
   }
 });
 
-// 📊 OBTENER ESTADÍSTICAS DE MASCOTAS (solo admin)
-router.get('/admin/stats', verifyToken, isAdmin, async (req, res) => {
+// 📊 OBTENER ESTADÍSTICAS DE MASCOTAS (admin)
+router.get('/stats/overview', verifyToken, isAdmin, async (req, res) => {
   try {
     console.log('📊 Obteniendo estadísticas de mascotas');
 
-    const stats = await Mascota.aggregate([
-      { $match: { activo: true } },
-      {
-        $group: {
-          _id: null,
-          totalMascotas: { $sum: 1 },
-          porEspecie: {
-            $push: '$especie'
-          },
-          porEstado: {
-            $push: '$estado'
-          },
-          edadPromedio: { $avg: '$edad' }
-        }
-      }
+    const [
+      totalMascotas,
+      mascotasActivas,
+      mascotasPorEspecie,
+      mascotasPorEstado
+    ] = await Promise.all([
+      Mascota.countDocuments(),
+      Mascota.countDocuments({ activo: true }),
+      Mascota.aggregate([
+        { $match: { activo: true } },
+        { $group: { _id: '$especie', count: { $sum: 1 } } }
+      ]),
+      Mascota.aggregate([
+        { $match: { activo: true } },
+        { $group: { _id: '$estado', count: { $sum: 1 } } }
+      ])
     ]);
 
-    // Procesar estadísticas
-    let especieStats = {};
-    let estadoStats = {};
-
-    if (stats.length > 0) {
-      stats[0].porEspecie.forEach(especie => {
-        especieStats[especie] = (especieStats[especie] || 0) + 1;
-      });
-
-      stats[0].porEstado.forEach(estado => {
-        estadoStats[estado] = (estadoStats[estado] || 0) + 1;
-      });
-    }
-
-    // Obtener mascotas que necesitan vacunas
-    const mascotasConVacunasPendientes = await Mascota.countDocuments({
-      activo: true,
-      'vacunas.proximaDosis': {
-        $gte: new Date(),
-        $lte: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // próximos 30 días
-      }
-    });
+    console.log('✅ Estadísticas obtenidas exitosamente');
 
     res.json({
-      success: true,
-      stats: {
-        totalMascotas: stats[0]?.totalMascotas || 0,
-        edadPromedio: Math.round((stats[0]?.edadPromedio || 0) * 10) / 10,
-        porEspecie: especieStats,
-        porEstado: estadoStats,
-        vacunasPendientes: mascotasConVacunasPendientes
-      }
+      totalMascotas,
+      mascotasActivas,
+      mascotasInactivas: totalMascotas - mascotasActivas,
+      porEspecie: mascotasPorEspecie,
+      porEstado: mascotasPorEstado
     });
 
   } catch (error) {
     console.error('❌ Error obteniendo estadísticas:', error);
     res.status(500).json({
-      error: 'Error obteniendo estadísticas',
-      code: 'STATS_ERROR'
+      error: 'Error interno del servidor',
+      code: 'INTERNAL_ERROR'
     });
   }
-});
-
-// 🩺 HEALTH CHECK
-router.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    service: 'Mascotas API',
-    timestamp: new Date().toISOString(),
-    features: {
-      crud: 'enabled',
-      fileUpload: 'enabled',
-      vaccines: 'enabled',
-      operations: 'enabled',
-      statistics: 'enabled'
-    },
-    endpoints: {
-      'POST /': 'Crear mascota',
-      'GET /': 'Obtener mascotas del usuario',
-      'GET /:id': 'Obtener mascota específica',
-      'PUT /:id': 'Actualizar mascota',
-      'DELETE /:id': 'Eliminar mascota',
-      'POST /:id/vacunas': 'Agregar vacuna',
-      'POST /:id/operaciones': 'Agregar operación',
-      'GET /admin/stats': 'Estadísticas (admin)',
-      'GET /health': 'Estado del servicio'
-    }
-  });
 });
 
 module.exports = router;

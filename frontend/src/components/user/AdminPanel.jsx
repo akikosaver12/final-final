@@ -22,7 +22,53 @@ const AdminPanel = () => {
     return "";
   };
 
-  // --- Estados principales ---
+  // --- fetch helper ---
+  const fetchJSON = async (url, options = {}) => {
+    try {
+      const token = getToken();
+      const headers = { ...(options.headers || {}) };
+      if (token) headers.Authorization = `Bearer ${token}`;
+      const res = await fetch(url, { ...options, headers });
+      let bodyText = await res.text();
+      if (!res.ok) {
+        let message = bodyText || `HTTP ${res.status}`;
+        try {
+          const j = JSON.parse(bodyText);
+          message = j.error || j.message || message;
+        } catch {}
+        throw new Error(`${res.status} ${res.statusText} - ${message}`);
+      }
+      try {
+        return JSON.parse(bodyText);
+      } catch {
+        return bodyText;
+      }
+    } catch (error) {
+      console.error(`❌ Fetch error for ${url}:`, error);
+      throw error;
+    }
+  };
+
+  // --- Server Health ---
+  const checkServerHealth = async () => {
+    try {
+      setServerStatus("checking");
+      const response = await fetch(`${BASE_URL}/health`);
+      if (response.ok) {
+        setServerStatus("online");
+        return true;
+      } else {
+        setServerStatus("offline");
+        return false;
+      }
+    } catch (error) {
+      console.error("Server health check failed:", error);
+      setServerStatus("offline");
+      return false;
+    }
+  };
+
+  // Estados principales
   const [activeTab, setActiveTab] = useState("productos");
   const [formData, setFormData] = useState({
     nombre: "",
@@ -41,7 +87,7 @@ const AdminPanel = () => {
     envioGratis: false
   });
   
-  // Estado para edición
+  // Estados para edición
   const [editingProduct, setEditingProduct] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   
@@ -56,65 +102,16 @@ const AdminPanel = () => {
   const [loading, setLoading] = useState(false);
   const [warn, setWarn] = useState("");
   const [serverStatus, setServerStatus] = useState("checking");
-  
-  // Refs
   const fileRef = useRef(null);
 
-  // --- Funciones de servidor ---
-  const checkServerHealth = async () => {
-    try {
-      const response = await fetch(`${BASE_URL}/health`);
-      if (response.ok) {
-        setServerStatus("online");
-        return true;
-      } else {
-        setServerStatus("offline");
-        return false;
-      }
-    } catch (error) {
-      console.error("Server health check failed:", error);
-      setServerStatus("offline");
-      return false;
-    }
-  };
+  // --- FUNCIONES PARA PRODUCTOS ---
 
-  // --- Fetch helper ---
-  const fetchJSON = async (url, options = {}) => {
-    try {
-      const token = getToken();
-      const headers = { ...(options.headers || {}) };
-      if (token) headers.Authorization = `Bearer ${token}`;
-      
-      const res = await fetch(url, { ...options, headers });
-      let bodyText = await res.text();
-      
-      if (!res.ok) {
-        let message = bodyText || `HTTP ${res.status}`;
-        try {
-          const j = JSON.parse(bodyText);
-          message = j.error || j.message || message;
-        } catch {}
-        throw new Error(`${res.status} ${res.statusText} - ${message}`);
-      }
-      
-      try {
-        return JSON.parse(bodyText);
-      } catch {
-        return bodyText;
-      }
-    } catch (error) {
-      console.error(`❌ Fetch error for ${url}:`, error);
-      throw error;
-    }
-  };
-
-  // --- Funciones de edición ---
+  // Función para iniciar edición
   const startEditProduct = (producto) => {
     setIsEditMode(true);
     setEditingProduct(producto);
     setActiveTab("productos");
     
-    // Llenar el formulario con los datos del producto
     setFormData({
       nombre: producto.nombre || "",
       precio: producto.precio || "",
@@ -126,7 +123,7 @@ const AdminPanel = () => {
       porcentajeDescuento: producto.descuento?.porcentaje || "",
       fechaInicioDescuento: producto.descuento?.fechaInicio ? 
         new Date(producto.descuento.fechaInicio).toISOString().split('T')[0] : "",
-      fechaFinDescuento: producto.descuento?.fechaFin ? 
+      fechaFinDescuento: producto.descuento?.fechaFin ?
         new Date(producto.descuento.fechaFin).toISOString().split('T')[0] : "",
       tieneGarantia: producto.garantia?.tiene || false,
       mesesGarantia: producto.garantia?.meses || "",
@@ -134,18 +131,16 @@ const AdminPanel = () => {
       envioGratis: producto.envioGratis || false
     });
     
-    // Limpiar preview de imagen
-    if (previewImage) {
-      URL.revokeObjectURL(previewImage);
-      setPreviewImage(null);
-    }
+    setPreviewImage(null);
+    if (fileRef.current) fileRef.current.value = "";
   };
 
+  // FUNCIÓN PARA CANCELAR EDICIÓN
   const cancelEdit = () => {
     setIsEditMode(false);
     setEditingProduct(null);
     
-    // Reset form
+    // Resetear formulario
     setFormData({
       nombre: "",
       precio: "",
@@ -163,21 +158,15 @@ const AdminPanel = () => {
       envioGratis: false
     });
     
-    if (previewImage) {
-      URL.revokeObjectURL(previewImage);
-      setPreviewImage(null);
-    }
-    
+    setPreviewImage(null);
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  // --- Handlers del formulario ---
+  // --- Handlers formulario actualizados ---
   const handleChange = (e) => {
     const { name, value, files, type, checked } = e.target;
-    
     if (files && files[0]) {
       setFormData((s) => ({ ...s, [name]: files[0] }));
-      if (previewImage) URL.revokeObjectURL(previewImage);
       setPreviewImage(URL.createObjectURL(files[0]));
     } else if (type === 'checkbox') {
       setFormData((s) => ({ ...s, [name]: checked }));
@@ -186,21 +175,19 @@ const AdminPanel = () => {
     }
   };
 
+  // FUNCIÓN ACTUALIZADA PARA MANEJAR CREAR/EDITAR
   const handleSubmit = async (e) => {
     e.preventDefault();
     setWarn("");
-    
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) {
       setWarn("❌ El servidor no está disponible.");
       return;
     }
-    
     const token = getToken();
     if (!token) return setWarn("Debes iniciar sesión para gestionar productos.");
 
     setLoading(true);
-    
     try {
       const data = new FormData();
       
@@ -208,6 +195,8 @@ const AdminPanel = () => {
       data.append("nombre", formData.nombre);
       data.append("precio", formData.precio);
       data.append("descripcion", formData.descripcion);
+      
+      // Nuevos campos
       data.append("categoria", formData.categoria);
       data.append("stock", formData.stock || "0");
       data.append("envioGratis", formData.envioGratis);
@@ -232,10 +221,10 @@ const AdminPanel = () => {
       }
 
       if (formData.imagen) {
-        data.append("imagen", formData.imagen);
+        data.append("imagenes", formData.imagen);
       }
 
-      // Determinar si es crear o editar
+      // DETERMINAR SI ES CREAR O EDITAR
       const url = isEditMode 
         ? `${BASE_URL}/api/productos/${editingProduct._id}`
         : `${BASE_URL}/api/productos`;
@@ -250,10 +239,30 @@ const AdminPanel = () => {
 
       alert(isEditMode ? "✅ Producto actualizado con éxito" : "✅ Producto agregado con éxito");
       
-      // Reset y reload
-      cancelEdit();
-      getProductos();
+      // Reset form
+      setFormData({
+        nombre: "",
+        precio: "",
+        descripcion: "",
+        imagen: null,
+        categoria: "otros",
+        stock: "",
+        tieneDescuento: false,
+        porcentajeDescuento: "",
+        fechaInicioDescuento: "",
+        fechaFinDescuento: "",
+        tieneGarantia: false,
+        mesesGarantia: "",
+        descripcionGarantia: "",
+        envioGratis: false
+      });
       
+      setPreviewImage(null);
+      setIsEditMode(false);
+      setEditingProduct(null);
+      
+      if (fileRef.current) fileRef.current.value = "";
+      getProductos();
     } catch (err) {
       setWarn(`❌ Error al ${isEditMode ? 'actualizar' : 'crear'} producto: ${err.message}`);
     } finally {
@@ -261,27 +270,22 @@ const AdminPanel = () => {
     }
   };
 
-  // --- Funciones de datos ---
+  // --- FUNCIONES DE USUARIOS ---
   const getUsuarios = async () => {
     setWarn("");
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) return setUsuarios([]);
-    
     try {
       const token = getToken();
       if (!token) return setWarn("Debes iniciar sesión como admin.");
-      
       const me = await fetchJSON(`${BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
       if (me?.role !== "admin") return setWarn("Tu usuario no es admin.");
-      
-      const data = await fetchJSON(`${BASE_URL}/api/usuarios`, {
+      const data = await fetchJSON(`${BASE_URL}/api/auth/usuarios`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
-      setUsuarios(data);
+      setUsuarios(data.usuarios || data);
     } catch (error) {
       setWarn(`No se pudieron cargar los usuarios: ${error.message}`);
     }
@@ -292,22 +296,20 @@ const AdminPanel = () => {
     try {
       const token = getToken();
       if (!token) return setWarn("Debes iniciar sesión para ver mascotas.");
-      
-      const data = await fetchJSON(`${BASE_URL}/api/usuarios/${userId}/mascotas`, {
+      const data = await fetchJSON(`${BASE_URL}/api/mascotas/usuario/${userId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
-      setMascotasUsuario(data.mascotas || []);
+      setMascotasUsuario(data || []);
     } catch (error) {
       setWarn(`No se pudieron cargar las mascotas: ${error.message}`);
     }
   };
 
+  // --- FUNCIONES DE PRODUCTOS ---
   const getProductos = async () => {
     setWarn("");
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) return setProductos([]);
-    
     try {
       const data = await fetchJSON(`${BASE_URL}/api/productos`);
       setProductos(data);
@@ -336,22 +338,18 @@ const AdminPanel = () => {
 
   const eliminarProducto = async (id) => {
     if (!window.confirm("¿Seguro que deseas eliminar este producto?")) return;
-    
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) {
       alert("❌ El servidor no está disponible.");
       return;
     }
-    
     try {
       const token = getToken();
       if (!token) return alert("Debes iniciar sesión como admin.");
-      
       await fetchJSON(`${BASE_URL}/api/productos/${id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` },
       });
-      
       alert("🗑️ Producto eliminado con éxito");
       getProductos();
     } catch (error) {
@@ -359,32 +357,101 @@ const AdminPanel = () => {
     }
   };
 
+  // --- FUNCIONES DE CITAS ---
   const getCitas = async () => {
     setWarn("");
     const isServerOnline = await checkServerHealth();
     if (!isServerOnline) return setCitas([]);
-    
     try {
       const token = getToken();
       if (!token) return setWarn("Debes iniciar sesión como admin.");
-      
       const me = await fetchJSON(`${BASE_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
       if (me?.role !== "admin") return setWarn("Tu usuario no es admin.");
-      
       const data = await fetchJSON(`${BASE_URL}/api/citas`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
       setCitas(data);
     } catch (error) {
       setWarn(`No se pudieron cargar las citas: ${error.message}`);
     }
   };
 
-  // --- Utility Functions ---
+  // --- FUNCIONES DE MASCOTAS (Vacunas y Operaciones) ---
+  
+  // Función para agregar vacunas
+  const handleAgregarVacuna = async (e, mascotaId) => {
+    e.preventDefault();
+    const formDataVacuna = new FormData(e.target);
+    const vacuna = {
+      nombre: formDataVacuna.get("nombre"),
+      fecha: formDataVacuna.get("fecha"),
+    };
+
+    const token = getToken();
+    try {
+      const res = await fetch(`${BASE_URL}/api/mascotas/${mascotaId}/vacunas`, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(vacuna),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Error al agregar vacuna: ${errorText}`);
+      }
+      const result = await res.json();
+      setMascotasUsuario((prev) =>
+        prev.map((m) => (m._id === mascotaId ? result.mascota : m))
+      );
+      e.target.reset();
+      alert("✅ Vacuna agregada correctamente");
+    } catch (err) {
+      alert("No se pudo agregar la vacuna: " + err.message);
+    }
+  };
+
+  // Función para agregar operaciones
+  const handleAgregarOperacion = async (e, mascotaId) => {
+    e.preventDefault();
+    const formDataOperacion = new FormData(e.target);
+    const operacion = {
+      nombre: formDataOperacion.get("nombre"),
+      descripcion: formDataOperacion.get("descripcion"),
+      fecha: formDataOperacion.get("fecha"),
+    };
+
+    const token = getToken();
+    try {
+      const res = await fetch(`${BASE_URL}/api/mascotas/${mascotaId}/operaciones`, {
+        method: "POST",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(operacion),
+      });
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Error al agregar operación: ${errorText}`);
+      }
+      const result = await res.json();
+      setMascotasUsuario((prev) =>
+        prev.map((m) => (m._id === mascotaId ? result.mascota : m))
+      );
+      e.target.reset();
+      alert("✅ Operación agregada correctamente");
+    } catch (err) {
+      alert("No se pudo agregar la operación: " + err.message);
+    }
+  };
+
+  // --- FUNCIONES AUXILIARES ---
   const formatearPrecio = (precio) => {
     return new Intl.NumberFormat('es-CO', {
       style: 'currency',
@@ -399,7 +466,7 @@ const AdminPanel = () => {
     return new Date(fecha).toLocaleDateString('es-CO');
   };
 
-  // --- Effects ---
+  // --- EFFECTS ---
   useEffect(() => {
     checkServerHealth();
     getCategorias();
@@ -407,8 +474,8 @@ const AdminPanel = () => {
 
   useEffect(() => {
     if (activeTab === "verUsuarios") getUsuarios();
-    else if (activeTab === "verProductos") getProductos();
-    else if (activeTab === "verCitas") getCitas();
+    if (activeTab === "verProductos") getProductos();
+    if (activeTab === "verCitas") getCitas();
   }, [activeTab]);
 
   useEffect(() => {
@@ -417,7 +484,7 @@ const AdminPanel = () => {
     };
   }, [previewImage]);
 
-  // --- Configuración del Sidebar ---
+  // Configuración de sidebar
   const sidebarItems = [
     { id: "productos", label: isEditMode ? "Editar Producto" : "Crear Producto", icon: Plus },
     { id: "verProductos", label: "Ver Productos", icon: Package },
@@ -427,7 +494,7 @@ const AdminPanel = () => {
 
   return (
     <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
-      {/* Sidebar Moderno */}
+      {/* Sidebar */}
       <aside className="w-80 bg-white shadow-xl border-r border-gray-200">
         <div className="p-8">
           {/* Header del Admin */}
@@ -443,7 +510,8 @@ const AdminPanel = () => {
             </div>
 
             {/* Status del servidor */}
-            <div className={`px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-3 ${
+            <div
+              className={`px-4 py-3 rounded-2xl text-sm font-medium flex items-center gap-3 ${
                 serverStatus === "online"
                   ? "bg-green-50 text-green-800 border border-green-200"
                   : serverStatus === "offline"
@@ -500,6 +568,7 @@ const AdminPanel = () => {
             <div className="w-24 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
           </div>
 
+          {/* Mensajes de advertencia */}
           {warn && (
             <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-2xl flex items-center gap-3">
               <AlertCircle className="text-yellow-600" size={20} />
@@ -507,10 +576,10 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* ===== FORMULARIO PRODUCTOS ===== */}
+          {/* Formulario Productos - CREAR/EDITAR */}
           {activeTab === "productos" && (
             <div>
-              {/* Header con botón cancelar para edición */}
+              {/* Header con botón cancelar en modo edición */}
               {isEditMode && (
                 <div className="mb-6 p-6 bg-blue-50 border border-blue-200 rounded-2xl">
                   <div className="flex justify-between items-center">
@@ -519,13 +588,11 @@ const AdminPanel = () => {
                         <Edit3 className="text-blue-600" size={24} />
                         ✏️ Editando: {editingProduct?.nombre}
                       </h3>
-                      <p className="text-blue-600">
-                        Modifica los campos que desees actualizar
-                      </p>
+                      <p className="text-blue-600">Modifica los campos que desees actualizar</p>
                     </div>
                     <button
                       onClick={cancelEdit}
-                      className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-2xl flex items-center gap-2 transition-colors"
+                      className="px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors flex items-center gap-2"
                     >
                       <X size={16} />
                       Cancelar
@@ -534,19 +601,17 @@ const AdminPanel = () => {
                 </div>
               )}
 
-              <div className="bg-white rounded-3xl shadow-2xl p-8">
-                <div className="mb-8">
-                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                    {isEditMode ? "✏️ Editar Producto" : "➕ Crear Nuevo Producto"}
-                  </h2>
-                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
-                </div>
+              <div className="bg-white rounded-2xl shadow-lg p-8">
+                <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                  <Package className="text-lime-500" size={28} />
+                  {isEditMode ? 'Editar Producto' : 'Crear Nuevo Producto'}
+                </h2>
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                   {/* Información básica */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-gray-700 font-semibold mb-2">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Nombre del Producto *
                       </label>
                       <input
@@ -554,14 +619,13 @@ const AdminPanel = () => {
                         name="nombre"
                         value={formData.nombre}
                         onChange={handleChange}
-                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                        placeholder="Ej: Alimento Premium para Perros"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-lime-500 focus:border-transparent"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-gray-700 font-semibold mb-2">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
                         Precio (COP) *
                       </label>
                       <input
@@ -569,27 +633,22 @@ const AdminPanel = () => {
                         name="precio"
                         value={formData.precio}
                         onChange={handleChange}
-                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                        placeholder="50000"
-                        min="0"
-                        step="100"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-lime-500 focus:border-transparent"
                         required
                       />
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <label className="block text-gray-700 font-semibold mb-2">
-                        Categoría
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Categoría *
                       </label>
                       <select
                         name="categoria"
                         value={formData.categoria}
                         onChange={handleChange}
-                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-lime-500 focus:border-transparent"
                       >
-                        {categorias.map((cat) => (
+                        {categorias.map(cat => (
                           <option key={cat.value} value={cat.value}>
                             {cat.label}
                           </option>
@@ -598,365 +657,343 @@ const AdminPanel = () => {
                     </div>
 
                     <div>
-                      <label className="block text-gray-700 font-semibold mb-2">
-                        Stock disponible
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Stock *
                       </label>
                       <input
                         type="number"
                         name="stock"
                         value={formData.stock}
                         onChange={handleChange}
-                        className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                        placeholder="100"
-                        min="0"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-lime-500 focus:border-transparent"
+                        required
                       />
                     </div>
                   </div>
 
+                  {/* Descripción */}
                   <div>
-                    <label className="block text-gray-700 font-semibold mb-2">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Descripción
                     </label>
                     <textarea
                       name="descripcion"
                       value={formData.descripcion}
                       onChange={handleChange}
-                      className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200 h-32"
-                      placeholder="Descripción detallada del producto..."
-                      required
-                    />
+                      rows="4"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-lime-500 focus:border-transparent"
+                    ></textarea>
                   </div>
 
                   {/* Imagen */}
                   <div>
-                    <label className="block text-gray-700 font-semibold mb-2">
-                      {isEditMode ? "Cambiar imagen (opcional)" : "Imagen del producto"}
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Imagen del Producto
                     </label>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      name="imagen"
-                      accept="image/*"
-                      className="w-full border-2 border-gray-200 p-3 rounded-2xl focus:ring-2 focus:ring-lime-400 focus:border-lime-400 transition-all duration-200"
-                      onChange={handleChange}
-                    />
-                    
-                    {/* Imagen actual en modo edición */}
-                    {isEditMode && !previewImage && editingProduct?.imagen && (
-                      <div className="mt-4">
-                        <p className="text-sm text-gray-600 mb-2">Imagen actual:</p>
-                        <img
-                          src={
-                            editingProduct.imagen.startsWith("http")
-                              ? editingProduct.imagen
-                              : `${BASE_URL}${editingProduct.imagen}`
-                          }
-                          alt="Imagen actual"
-                          className="w-40 h-40 object-cover rounded-2xl shadow-lg"
-                        />
-                      </div>
-                    )}
-                    
-                    {/* Preview de nueva imagen */}
-                    {previewImage && (
-                      <div className="mt-4">
-                        <p className="text-sm text-gray-600 mb-2">
-                          {isEditMode ? "Nueva imagen:" : "Vista previa:"}
-                        </p>
-                        <img
-                          src={previewImage}
-                          alt="Preview"
-                          className="w-40 h-40 object-cover rounded-2xl shadow-lg"
-                        />
-                      </div>
-                    )}
+                    <div className="mt-2">
+                      <input
+                        type="file"
+                        ref={fileRef}
+                        name="imagen"
+                        onChange={handleChange}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileRef.current?.click()}
+                        className="w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl hover:border-lime-400 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Camera size={20} />
+                        {previewImage ? 'Cambiar Imagen' : 'Seleccionar Imagen'}
+                      </button>
+                      {previewImage && (
+                        <div className="mt-4">
+                          <img
+                            src={previewImage}
+                            alt="Preview"
+                            className="w-32 h-32 object-cover rounded-xl border border-gray-300"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Opciones adicionales */}
-                  <div className="bg-gray-50 p-6 rounded-2xl space-y-4">
-                    <h3 className="font-semibold text-gray-800 mb-4">Opciones Adicionales</h3>
-                    
-                    {/* Envío gratis */}
-                    <div className="flex items-center">
+                  {/* Descuento */}
+                  <div className="border border-gray-200 rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
                       <input
                         type="checkbox"
-                        name="envioGratis"
-                        checked={formData.envioGratis}
+                        name="tieneDescuento"
+                        checked={formData.tieneDescuento}
                         onChange={handleChange}
-                        className="mr-3 w-4 h-4"
+                        className="w-5 h-5"
                       />
-                      <label className="text-gray-700">
-                        🚚 Envío gratis
+                      <label className="font-semibold text-gray-700">
+                        Aplicar Descuento
                       </label>
                     </div>
-
-                    {/* Descuento */}
-                    <div>
-                      <div className="flex items-center mb-3">
-                        <input
-                          type="checkbox"
-                          name="tieneDescuento"
-                          checked={formData.tieneDescuento}
-                          onChange={handleChange}
-                          className="mr-3 w-4 h-4"
-                        />
-                        <label className="text-gray-700">
-                          🏷️ Aplicar descuento
-                        </label>
-                      </div>
-
-                      {formData.tieneDescuento && (
-                        <div className="ml-7 grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <label className="block text-gray-600 text-sm mb-1">
-                              Porcentaje %
-                            </label>
-                            <input
-                              type="number"
-                              name="porcentajeDescuento"
-                              value={formData.porcentajeDescuento}
-                              onChange={handleChange}
-                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
-                              placeholder="15"
-                              min="1"
-                              max="99"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-gray-600 text-sm mb-1">
-                              Fecha inicio
-                            </label>
-                            <input
-                              type="date"
-                              name="fechaInicioDescuento"
-                              value={formData.fechaInicioDescuento}
-                              onChange={handleChange}
-                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-gray-600 text-sm mb-1">
-                              Fecha fin
-                            </label>
-                            <input
-                              type="date"
-                              name="fechaFinDescuento"
-                              value={formData.fechaFinDescuento}
-                              onChange={handleChange}
-                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
-                            />
-                          </div>
+                    
+                    {formData.tieneDescuento && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-1">
+                            Porcentaje (%)
+                          </label>
+                          <input
+                            type="number"
+                            name="porcentajeDescuento"
+                            value={formData.porcentajeDescuento}
+                            onChange={handleChange}
+                            min="1"
+                            max="100"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
                         </div>
-                      )}
-                    </div>
-
-                    {/* Garantía */}
-                    <div>
-                      <div className="flex items-center mb-3">
-                        <input
-                          type="checkbox"
-                          name="tieneGarantia"
-                          checked={formData.tieneGarantia}
-                          onChange={handleChange}
-                          className="mr-3 w-4 h-4"
-                        />
-                        <label className="text-gray-700">
-                          🛡️ Incluir garantía
-                        </label>
-                      </div>
-
-                      {formData.tieneGarantia && (
-                        <div className="ml-7 grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-gray-600 text-sm mb-1">
-                              Meses de garantía
-                            </label>
-                            <input
-                              type="number"
-                              name="mesesGarantia"
-                              value={formData.mesesGarantia}
-                              onChange={handleChange}
-                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
-                              placeholder="12"
-                              min="1"
-                              max="60"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-gray-600 text-sm mb-1">
-                              Descripción de garantía
-                            </label>
-                            <input
-                              type="text"
-                              name="descripcionGarantia"
-                              value={formData.descripcionGarantia}
-                              onChange={handleChange}
-                              className="w-full border border-gray-200 p-2 rounded-xl text-sm"
-                              placeholder="Garantía contra defectos de fabricación"
-                            />
-                          </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-1">
+                            Fecha Inicio
+                          </label>
+                          <input
+                            type="date"
+                            name="fechaInicioDescuento"
+                            value={formData.fechaInicioDescuento}
+                            onChange={handleChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
                         </div>
-                      )}
-                    </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-1">
+                            Fecha Fin
+                          </label>
+                          <input
+                            type="date"
+                            name="fechaFinDescuento"
+                            value={formData.fechaFinDescuento}
+                            onChange={handleChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Botón enviar */}
-                  <div className="flex justify-end pt-6">
+                  {/* Garantía */}
+                  <div className="border border-gray-200 rounded-xl p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <input
+                        type="checkbox"
+                        name="tieneGarantia"
+                        checked={formData.tieneGarantia}
+                        onChange={handleChange}
+                        className="w-5 h-5"
+                      />
+                      <label className="font-semibold text-gray-700">
+                        Incluir Garantía
+                      </label>
+                    </div>
+                    
+                    {formData.tieneGarantia && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-1">
+                            Meses de Garantía
+                          </label>
+                          <input
+                            type="number"
+                            name="mesesGarantia"
+                            value={formData.mesesGarantia}
+                            onChange={handleChange}
+                            min="1"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 mb-1">
+                            Descripción de Garantía
+                          </label>
+                          <input
+                            type="text"
+                            name="descripcionGarantia"
+                            value={formData.descripcionGarantia}
+                            onChange={handleChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Envío gratis */}
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      name="envioGratis"
+                      checked={formData.envioGratis}
+                      onChange={handleChange}
+                      className="w-5 h-5"
+                    />
+                    <label className="font-semibold text-gray-700 flex items-center gap-2">
+                      <Truck size={20} />
+                      Envío Gratis
+                    </label>
+                  </div>
+
+                  {/* Botones */}
+                  <div className="flex gap-4 pt-6">
                     <button
                       type="submit"
                       disabled={loading}
-                      className={`px-8 py-4 rounded-2xl font-medium text-white flex items-center gap-3 text-lg shadow-xl transition-all duration-300 ${
-                        loading
-                          ? "bg-gray-400 cursor-not-allowed"
-                          : "bg-gradient-to-r from-lime-400 to-lime-500 hover:from-lime-500 hover:to-lime-600 hover:shadow-2xl transform hover:-translate-y-1"
-                      }`}
+                      className="flex-1 bg-gradient-to-r from-lime-400 to-lime-500 text-black py-4 rounded-2xl font-semibold text-lg hover:from-lime-500 hover:to-lime-600 transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-3"
                     >
                       {loading ? (
-                        <>
-                          <RefreshCw className="animate-spin" size={20} />
-                          {isEditMode ? "Actualizando..." : "Creando..."}
-                        </>
+                        <RefreshCw className="animate-spin" size={20} />
                       ) : (
-                        <>
-                          {isEditMode ? <Save size={20} /> : <Plus size={20} />}
-                          {isEditMode ? "Actualizar Producto" : "Crear Producto"}
-                        </>
+                        <Save size={20} />
                       )}
+                      {loading ? 'Procesando...' : isEditMode ? 'Actualizar Producto' : 'Crear Producto'}
                     </button>
+                    
+                    {isEditMode && (
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        className="px-6 py-4 bg-gray-200 text-gray-700 rounded-2xl font-medium hover:bg-gray-300 transition-colors flex items-center gap-2"
+                      >
+                        <X size={20} />
+                        Cancelar
+                      </button>
+                    )}
                   </div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* ===== VER PRODUCTOS ===== */}
+          {/* Ver Productos */}
           {activeTab === "verProductos" && (
             <div>
-              <div className="mb-8 flex justify-between items-center">
-                <div>
-                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                    📦 Productos Registrados
-                  </h2>
-                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
-                </div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold text-gray-900">Lista de Productos</h2>
                 <button
-                  onClick={getProductos}
-                  className="bg-lime-500 hover:bg-lime-600 text-white px-6 py-3 rounded-2xl flex items-center gap-2 transition-colors shadow-lg"
+                  onClick={() => {
+                    getProductos();
+                  }}
+                  className="px-6 py-3 bg-lime-500 text-white rounded-xl hover:bg-lime-600 transition-colors flex items-center gap-2"
                 >
                   <RefreshCw size={18} />
                   Actualizar
                 </button>
               </div>
 
-              <div className="grid gap-8 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-6">
                 {productos.length === 0 ? (
-                  <div className="col-span-full text-center py-12">
+                  <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
                     <Package className="mx-auto text-gray-400 mb-4" size={64} />
                     <p className="text-gray-600 text-xl">No hay productos registrados</p>
                   </div>
                 ) : (
-                  productos.map((p) => (
+                  productos.map((producto) => (
                     <div
-                      key={p._id}
-                      className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300"
+                      key={producto._id}
+                      className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100"
                     >
-                      {/* Imagen del producto */}
-                      {p.imagen && (
-                        <div className="mb-6">
+                      <div className="flex items-start gap-6">
+                        {/* Imagen */}
+                        {producto.imagenes && producto.imagenes[0] && (
                           <img
                             src={
-                              p.imagen.startsWith("http")
-                                ? p.imagen
-                                : `${BASE_URL}${p.imagen}`
+                              producto.imagenes[0].startsWith("http")
+                                ? producto.imagenes[0]
+                                : `${BASE_URL}${producto.imagenes[0]}`
                             }
-                            alt={p.nombre}
-                            className="w-full h-48 object-cover rounded-2xl shadow-md"
+                            alt={producto.nombre}
+                            className="w-24 h-24 object-cover rounded-xl shadow-md"
                             onError={(e) => (e.target.style.display = "none")}
                           />
-                        </div>
-                      )}
-
-                      <div className="mb-4">
-                        <h3 className="font-bold text-gray-900 text-xl mb-2">{p.nombre}</h3>
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-2xl font-bold text-lime-600">
-                            {formatearPrecio(p.precio)}
-                          </span>
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            p.categoria === 'alimento' ? 'bg-green-100 text-green-800' :
-                            p.categoria === 'juguetes' ? 'bg-purple-100 text-purple-800' :
-                            p.categoria === 'medicamentos' ? 'bg-red-100 text-red-800' :
-                            p.categoria === 'accesorios' ? 'bg-blue-100 text-blue-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {p.categoria?.toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-3 text-sm">
-                        <p className="text-gray-600 line-clamp-3">
-                          {p.descripcion}
-                        </p>
+                        )}
                         
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="bg-gray-50 p-2 rounded-xl">
-                            <span className="font-semibold text-gray-700 block">Stock:</span>
-                            <p className="text-gray-900">{p.stock || "No especificado"}</p>
+                        {/* Información */}
+                        <div className="flex-1">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                              <h3 className="text-xl font-bold text-gray-900 mb-2">
+                                {producto.nombre}
+                              </h3>
+                              <div className="flex items-center gap-4 text-sm text-gray-600">
+                                <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-medium">
+                                  {producto.categoria}
+                                </span>
+                                <span className={`px-3 py-1 rounded-full font-medium ${
+                                  producto.stock > 0 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-red-100 text-red-800'
+                                }`}>
+                                  Stock: {producto.stock}
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Precio */}
+                            <div className="text-right">
+                              <div className="text-2xl font-bold text-green-600">
+                                {formatearPrecio(producto.precio)}
+                              </div>
+                              {producto.descuento?.tiene && (
+                                <div className="text-sm text-red-600 font-medium">
+                                  {producto.descuento.porcentaje}% OFF
+                                </div>
+                              )}
+                            </div>
                           </div>
                           
-                          {p.descuento?.tiene && (
-                            <div className="bg-red-50 p-2 rounded-xl">
-                              <span className="font-semibold text-red-700 block">Descuento:</span>
-                              <p className="text-red-900">{p.descuento.porcentaje}% OFF</p>
-                            </div>
+                          {/* Descripción */}
+                          {producto.descripcion && (
+                            <p className="text-gray-600 mb-4 line-clamp-2">
+                              {producto.descripcion}
+                            </p>
                           )}
+                          
+                          {/* Características */}
+                          <div className="flex flex-wrap gap-2 mb-4">
+                            {producto.envioGratis && (
+                              <span className="bg-lime-100 text-lime-800 px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                                <Truck size={12} />
+                                Envío Gratis
+                              </span>
+                            )}
+                            {producto.garantia?.tiene && (
+                              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                                <Shield size={12} />
+                                {producto.garantia.meses} meses garantía
+                              </span>
+                            )}
+                            {producto.destacado && (
+                              <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1">
+                                <Award size={12} />
+                                Destacado
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Botones de acción */}
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => startEditProduct(producto)}
+                              className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
+                            >
+                              <Edit3 size={16} />
+                              Editar
+                            </button>
+                            <button
+                              onClick={() => eliminarProducto(producto._id)}
+                              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors flex items-center gap-2"
+                            >
+                              <Trash2 size={16} />
+                              Eliminar
+                            </button>
+                          </div>
                         </div>
-
-                        {p.envioGratis && (
-                          <div className="bg-green-50 p-2 rounded-xl">
-                            <span className="text-green-800 font-medium flex items-center gap-2">
-                              <Truck size={16} />
-                              Envío gratis
-                            </span>
-                          </div>
-                        )}
-
-                        {p.garantia?.tiene && (
-                          <div className="bg-blue-50 p-2 rounded-xl">
-                            <span className="text-blue-800 font-medium flex items-center gap-2">
-                              <Shield size={16} />
-                              Garantía {p.garantia.meses} meses
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Botones de acción */}
-                      <div className="flex gap-2 mt-6">
-                        <button
-                          onClick={() => startEditProduct(p)}
-                          className="flex-1 bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-2xl flex items-center justify-center gap-2 transition-colors"
-                        >
-                          <Edit3 size={16} />
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => eliminarProducto(p._id)}
-                          className="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-4 rounded-2xl flex items-center justify-center gap-2 transition-colors"
-                        >
-                          <Trash2 size={16} />
-                          Eliminar
-                        </button>
-                      </div>
-
-                      <div className="pt-4 mt-4 border-t border-gray-200">
-                        <p className="text-xs text-gray-400">ID: {p._id}</p>
-                        {p.createdAt && (
-                          <p className="text-xs text-gray-400">
-                            Creado: {new Date(p.createdAt).toLocaleString()}
-                          </p>
-                        )}
                       </div>
                     </div>
                   ))
@@ -965,92 +1002,71 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* ===== VER USUARIOS ===== */}
+          {/* Ver Usuarios */}
           {activeTab === "verUsuarios" && (
             <div>
-              <div className="mb-8 flex justify-between items-center">
-                <div>
-                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                    👥 Usuarios Registrados
-                  </h2>
-                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
-                </div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold text-gray-900">Lista de Usuarios</h2>
                 <button
                   onClick={getUsuarios}
-                  className="bg-lime-500 hover:bg-lime-600 text-white px-6 py-3 rounded-2xl flex items-center gap-2 transition-colors shadow-lg"
+                  className="px-6 py-3 bg-lime-500 text-white rounded-xl hover:bg-lime-600 transition-colors flex items-center gap-2"
                 >
                   <RefreshCw size={18} />
                   Actualizar
                 </button>
               </div>
 
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4">
                 {usuarios.length === 0 ? (
-                  <div className="col-span-full text-center py-12">
+                  <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
                     <Users className="mx-auto text-gray-400 mb-4" size={64} />
                     <p className="text-gray-600 text-xl">No hay usuarios registrados</p>
                   </div>
                 ) : (
-                  usuarios.map((u) => (
+                  usuarios.map((usuario) => (
                     <div
-                      key={u._id}
-                      onClick={() => {
-                        setSelectedUser(u);
-                        setActiveTab("detalleUsuario");
-                        getMascotasUsuario(u._id);
-                      }}
-                      className="bg-white p-6 rounded-2xl shadow-lg cursor-pointer hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-100"
+                      key={usuario._id}
+                      className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100"
                     >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-12 h-12 bg-gradient-to-r from-purple-400 to-purple-500 rounded-2xl flex items-center justify-center">
-                          <Users className="text-white" size={20} />
-                        </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          u.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {u.role?.toUpperCase()}
-                        </span>
-                      </div>
-
-                      <div>
-                        <h3 className="font-bold text-gray-900 text-xl mb-2">{u.name}</h3>
-                        <div className="space-y-2 text-sm">
-                          <div className="bg-gray-50 p-3 rounded-xl">
-                            <span className="font-semibold text-gray-700 block mb-1">Email:</span>
-                            <p className="text-gray-900 break-all">{u.email}</p>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900 mb-2">
+                            {usuario.name}
+                          </h3>
+                          <div className="space-y-1 text-sm text-gray-600">
+                            <p>{usuario.email}</p>
+                            {usuario.telefono && <p>📞 {usuario.telefono}</p>}
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                usuario.role === 'admin' 
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {usuario.role || 'user'}
+                              </span>
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                usuario.isVerified 
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}>
+                                {usuario.isVerified ? 'Verificado' : 'No verificado'}
+                              </span>
+                            </div>
                           </div>
-                          
-                          {u.telefono && (
-                            <div className="bg-gray-50 p-3 rounded-xl">
-                              <span className="font-semibold text-gray-700 block mb-1">Teléfono:</span>
-                              <p className="text-gray-900">{u.telefono}</p>
-                            </div>
-                          )}
-                          
-                          {u.direccion && (
-                            <div className="bg-gray-50 p-3 rounded-xl">
-                              <span className="font-semibold text-gray-700 block mb-1">Dirección:</span>
-                              <p className="text-gray-900">
-                                {u.direccion.ciudad}, {u.direccion.estado}
-                              </p>
-                            </div>
-                          )}
                         </div>
-
-                        <div className="mt-4 pt-4 border-t border-gray-200">
-                          <p className="text-xs text-gray-400">ID: {u._id}</p>
-                          {u.createdAt && (
-                            <p className="text-xs text-gray-400">
-                              Registro: {new Date(u.createdAt).toLocaleString()}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-center">
-                          <span className="text-sm text-purple-600 font-medium flex items-center gap-2">
+                        
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setSelectedUser(usuario);
+                              setActiveTab("detalleUsuario");
+                              getMascotasUsuario(usuario._id);
+                            }}
+                            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors flex items-center gap-2"
+                          >
                             <Eye size={16} />
-                            Click para ver mascotas
-                          </span>
+                            Ver Mascotas
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -1060,47 +1076,51 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* ===== VER CITAS ===== */}
+          {/* Ver Citas */}
           {activeTab === "verCitas" && (
             <div>
-              <div className="mb-8 flex justify-between items-center">
-                <div>
-                  <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                    📅 Citas Agendadas
-                  </h2>
-                  <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
-                </div>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-3xl font-bold text-gray-900">Lista de Citas</h2>
                 <button
                   onClick={getCitas}
-                  className="bg-lime-500 hover:bg-lime-600 text-white px-6 py-3 rounded-2xl flex items-center gap-2 transition-colors shadow-lg"
+                  className="px-6 py-3 bg-lime-500 text-white rounded-xl hover:bg-lime-600 transition-colors flex items-center gap-2"
                 >
                   <RefreshCw size={18} />
                   Actualizar
                 </button>
               </div>
 
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4">
                 {citas.length === 0 ? (
-                  <div className="col-span-full text-center py-12">
+                  <div className="text-center py-12 bg-white rounded-2xl shadow-lg">
                     <Calendar className="mx-auto text-gray-400 mb-4" size={64} />
-                    <p className="text-gray-600 text-xl">No hay citas agendadas</p>
+                    <p className="text-gray-600 text-xl">No hay citas registradas</p>
                   </div>
                 ) : (
-                  citas.map((c) => (
+                  citas.map((cita) => (
                     <div
-                      key={c._id}
-                      className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300"
+                      key={cita._id}
+                      className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100"
                     >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="w-12 h-12 bg-gradient-to-r from-indigo-400 to-indigo-500 rounded-2xl flex items-center justify-center">
-                          <Calendar className="text-white" size={20} />
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-900 mb-2">
+                            Cita #{cita._id.slice(-6)}
+                          </h3>
+                          {cita.usuario && (
+                            <p className="text-lg text-gray-700 mb-2">
+                              Cliente: {cita.usuario.name}
+                            </p>
+                          )}
                         </div>
-                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                          c.estado === 'confirmada' ? 'bg-green-100 text-green-800' :
-                          c.estado === 'cancelada' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          cita.estado === "confirmada" 
+                            ? "bg-green-100 text-green-800"
+                            : cita.estado === "cancelada"
+                            ? "bg-red-100 text-red-800"
+                            : "bg-gray-100 text-gray-800"
                         }`}>
-                          {c.estado?.toUpperCase() || "PENDIENTE"}
+                          {cita.estado?.toUpperCase() || "PENDIENTE"}
                         </span>
                       </div>
 
@@ -1108,43 +1128,39 @@ const AdminPanel = () => {
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div className="bg-gray-50 p-3 rounded-xl">
                             <span className="font-semibold text-gray-700 block mb-1">Fecha:</span>
-                            <p className="text-gray-900">
-                              {c.fecha ? new Date(c.fecha).toLocaleDateString() : "No especificada"}
-                            </p>
+                            <p className="text-gray-900">{cita.fecha ? formatearFecha(cita.fecha) : "No especificada"}</p>
                           </div>
                           <div className="bg-gray-50 p-3 rounded-xl">
                             <span className="font-semibold text-gray-700 block mb-1">Hora:</span>
-                            <p className="text-gray-900">{c.hora || "No especificada"}</p>
+                            <p className="text-gray-900">{cita.hora || "No especificada"}</p>
                           </div>
                         </div>
 
-                        {c.mascota && (
+                        {cita.mascota && (
                           <div className="bg-blue-50 p-3 rounded-xl">
                             <span className="font-semibold text-blue-700 block mb-1">Mascota:</span>
-                            <p className="text-blue-900">{c.mascota.nombre} ({c.mascota.especie})</p>
+                            <p className="text-blue-900">{cita.mascota.nombre} ({cita.mascota.especie})</p>
                           </div>
                         )}
 
-                        {c.motivo && (
+                        {cita.motivo && (
                           <div className="bg-purple-50 p-3 rounded-xl">
                             <span className="font-semibold text-purple-700 block mb-1">Motivo:</span>
-                            <p className="text-purple-900">{c.motivo}</p>
+                            <p className="text-purple-900">{cita.motivo}</p>
                           </div>
                         )}
 
-                        {c.notas && (
+                        {cita.notas && (
                           <div className="bg-orange-50 p-3 rounded-xl">
                             <span className="font-semibold text-orange-700 block mb-1">Notas:</span>
-                            <p className="text-orange-900">{c.notas}</p>
+                            <p className="text-orange-900">{cita.notas}</p>
                           </div>
                         )}
 
                         <div className="pt-4 border-t border-gray-200">
-                          <p className="text-xs text-gray-400">ID: {c._id}</p>
-                          {c.createdAt && (
-                            <p className="text-xs text-gray-400">
-                              Creada: {new Date(c.createdAt).toLocaleString()}
-                            </p>
+                          <p className="text-xs text-gray-400">ID: {cita._id}</p>
+                          {cita.createdAt && (
+                            <p className="text-xs text-gray-400">Creada: {new Date(cita.createdAt).toLocaleString()}</p>
                           )}
                         </div>
                       </div>
@@ -1155,14 +1171,13 @@ const AdminPanel = () => {
             </div>
           )}
 
-          {/* ===== DETALLE USUARIO ===== */}
+          {/* Detalle Usuario */}
           {activeTab === "detalleUsuario" && selectedUser && (
             <div>
               <button
                 onClick={() => {
                   setActiveTab("verUsuarios");
                   setSelectedUser(null);
-                  setMascotasUsuario([]);
                 }}
                 className="mb-8 bg-gray-200 px-6 py-3 rounded-2xl hover:bg-gray-300 transition-colors flex items-center gap-2 font-medium"
               >
@@ -1170,12 +1185,9 @@ const AdminPanel = () => {
                 Volver a Usuarios
               </button>
 
-              <div className="mb-8">
-                <h2 className="text-3xl font-bold text-gray-900 mb-2">
-                  🐾 Mascotas de {selectedUser.name}
-                </h2>
-                <div className="w-16 h-1 bg-gradient-to-r from-lime-400 to-lime-500 rounded-full"></div>
-              </div>
+              <h2 className="text-3xl font-bold text-gray-900 mb-8">
+                Mascotas de {selectedUser.name}
+              </h2>
 
               <div className="grid gap-8 md:grid-cols-1 lg:grid-cols-2">
                 {mascotasUsuario.length === 0 ? (
@@ -1186,24 +1198,24 @@ const AdminPanel = () => {
                     </p>
                   </div>
                 ) : (
-                  mascotasUsuario.map((m) => (
+                  mascotasUsuario.map((mascota) => (
                     <div
-                      key={m._id}
+                      key={mascota._id}
                       className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100"
                     >
                       <div className="flex items-center justify-between mb-6">
                         <div>
-                          <h3 className="font-bold text-gray-900 text-2xl">{m.nombre}</h3>
-                          <p className="text-gray-600 text-lg">{m.especie} • {m.raza}</p>
+                          <h3 className="font-bold text-gray-900 text-2xl">{mascota.nombre}</h3>
+                          <p className="text-gray-600 text-lg">{mascota.especie} • {mascota.raza}</p>
                         </div>
-                        {m.imagen && (
+                        {mascota.imagen && (
                           <img
                             src={
-                              m.imagen.startsWith("http")
-                                ? m.imagen
-                                : `${BASE_URL}${m.imagen}`
+                              mascota.imagen.startsWith("http")
+                                ? mascota.imagen
+                                : `${BASE_URL}${mascota.imagen}`
                             }
-                            alt={m.nombre}
+                            alt={mascota.nombre}
                             className="w-24 h-24 object-cover rounded-2xl shadow-lg"
                             onError={(e) => (e.target.style.display = "none")}
                           />
@@ -1215,90 +1227,188 @@ const AdminPanel = () => {
                         <div className="grid grid-cols-2 gap-6 text-sm">
                           <div>
                             <span className="font-semibold text-gray-700 block mb-1">Edad:</span>
-                            <p className="text-gray-900">
-                              {m.edad ? `${m.edad} años` : "No especificada"}
-                            </p>
+                            <p className="text-gray-900">{mascota.edad ? `${mascota.edad} ${mascota.unidadEdad || 'años'}` : "No especificada"}</p>
                           </div>
                           <div>
                             <span className="font-semibold text-gray-700 block mb-1">Género:</span>
-                            <p className="text-gray-900">{m.genero || "No especificado"}</p>
+                            <p className="text-gray-900">{mascota.genero || "No especificado"}</p>
                           </div>
                           <div>
                             <span className="font-semibold text-gray-700 block mb-1">Estado:</span>
-                            <p className="text-gray-900">{m.estado || "No especificado"}</p>
+                            <p className="text-gray-900">{mascota.estado || "No especificado"}</p>
                           </div>
                           <div>
-                            <span className="font-semibold text-gray-700 block mb-1">Enfermedades:</span>
-                            <p className="text-gray-900">{m.enfermedades || "Ninguna"}</p>
+                            <span className="font-semibold text-gray-700 block mb-1">Peso:</span>
+                            <p className="text-gray-900">{mascota.peso ? `${mascota.peso} kg` : "No especificado"}</p>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Información médica */}
+                      {(mascota.enfermedades || mascota.alergias || mascota.medicamentos) && (
+                        <div className="mb-6 p-4 bg-red-50 rounded-xl">
+                          <h4 className="font-semibold text-red-800 mb-3">Información Médica</h4>
+                          <div className="space-y-2 text-sm">
+                            {mascota.enfermedades && (
+                              <div>
+                                <span className="font-medium text-red-700">Enfermedades:</span>
+                                <p className="text-red-900">{mascota.enfermedades}</p>
+                              </div>
+                            )}
+                            {mascota.alergias && (
+                              <div>
+                                <span className="font-medium text-red-700">Alergias:</span>
+                                <p className="text-red-900">{mascota.alergias}</p>
+                              </div>
+                            )}
+                            {mascota.medicamentos && (
+                              <div>
+                                <span className="font-medium text-red-700">Medicamentos:</span>
+                                <p className="text-red-900">{mascota.medicamentos}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Vacunas */}
+                      <div className="mb-6">
+                        <h4 className="font-semibold text-gray-800 mb-4">Vacunas</h4>
+                        {mascota.vacunas && mascota.vacunas.length > 0 ? (
+                          <div className="space-y-2 mb-4">
+                            {mascota.vacunas.map((vacuna, index) => (
+                              <div key={index} className="bg-green-50 p-3 rounded-lg">
+                                <p className="font-medium text-green-800">{vacuna.nombre}</p>
+                                <p className="text-green-600 text-sm">
+                                  {vacuna.fecha ? formatearFecha(vacuna.fecha) : 'Sin fecha'}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-gray-500 text-sm mb-4">Sin vacunas registradas</p>
+                        )}
                         
-                        {m.historial && (
-                          <div className="mt-6">
-                            <span className="font-semibold text-gray-700 block mb-2">Historial:</span>
-                            <p className="text-gray-900">{m.historial}</p>
-                          </div>
-                        )}
+                        {/* Formulario para agregar vacuna */}
+                        <details className="bg-gray-50 p-4 rounded-lg">
+                          <summary className="cursor-pointer font-medium text-gray-700 mb-3">
+                            Agregar Nueva Vacuna
+                          </summary>
+                          <form onSubmit={(e) => handleAgregarVacuna(e, mascota._id)} className="space-y-3">
+                            <div>
+                              <input
+                                type="text"
+                                name="nombre"
+                                placeholder="Nombre de la vacuna"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <input
+                                type="date"
+                                name="fecha"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                required
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              className="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                            >
+                              Agregar Vacuna
+                            </button>
+                          </form>
+                        </details>
                       </div>
 
-                      {/* Sección de vacunas */}
-                      <div className="mb-8">
-                        <h4 className="font-semibold text-green-700 mb-4 text-xl">💉 Vacunas</h4>
-                        {m.vacunas && m.vacunas.length > 0 ? (
-                          <div className="space-y-3">
-                            {m.vacunas.map((vacuna, idx) => (
-                              <div key={idx} className="bg-green-50 p-4 rounded-xl border border-green-200">
-                                <div className="flex justify-between items-start mb-2">
-                                  <h5 className="font-semibold text-green-800">{vacuna.nombre}</h5>
-                                  {vacuna.fecha && (
-                                    <span className="text-sm text-green-600 bg-green-100 px-2 py-1 rounded-lg">
-                                      {formatearFecha(vacuna.fecha)}
-                                    </span>
-                                  )}
-                                </div>
-                                {vacuna.notas && (
-                                  <p className="text-green-700 text-sm">{vacuna.notas}</p>
-                                )}
+                      {/* Operaciones */}
+                      <div className="mb-6">
+                        <h4 className="font-semibold text-gray-800 mb-4">Operaciones</h4>
+                        {mascota.operaciones && mascota.operaciones.length > 0 ? (
+                          <div className="space-y-2 mb-4">
+                            {mascota.operaciones.map((operacion, index) => (
+                              <div key={index} className="bg-blue-50 p-3 rounded-lg">
+                                <p className="font-medium text-blue-800">{operacion.nombre}</p>
+                                <p className="text-blue-600 text-sm">{operacion.descripcion}</p>
+                                <p className="text-blue-600 text-sm">
+                                  {operacion.fecha ? formatearFecha(operacion.fecha) : 'Sin fecha'}
+                                </p>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-gray-500 italic">No hay vacunas registradas</p>
+                          <p className="text-gray-500 text-sm mb-4">Sin operaciones registradas</p>
                         )}
+                        
+                        {/* Formulario para agregar operación */}
+                        <details className="bg-gray-50 p-4 rounded-lg">
+                          <summary className="cursor-pointer font-medium text-gray-700 mb-3">
+                            Agregar Nueva Operación
+                          </summary>
+                          <form onSubmit={(e) => handleAgregarOperacion(e, mascota._id)} className="space-y-3">
+                            <div>
+                              <input
+                                type="text"
+                                name="nombre"
+                                placeholder="Nombre de la operación"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <textarea
+                                name="descripcion"
+                                placeholder="Descripción"
+                                rows="2"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                required
+                              ></textarea>
+                            </div>
+                            <div>
+                              <input
+                                type="date"
+                                name="fecha"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                required
+                              />
+                            </div>
+                            <button
+                              type="submit"
+                              className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                            >
+                              Agregar Operación
+                            </button>
+                          </form>
+                        </details>
                       </div>
 
-                      {/* Sección de operaciones */}
-                      <div>
-                        <h4 className="font-semibold text-orange-700 mb-4 text-xl">🏥 Operaciones</h4>
-                        {m.operaciones && m.operaciones.length > 0 ? (
-                          <div className="space-y-3">
-                            {m.operaciones.map((op, idx) => (
-                              <div key={idx} className="bg-orange-50 p-4 rounded-xl border border-orange-200">
-                                <div className="flex justify-between items-start mb-2">
-                                  <h5 className="font-semibold text-orange-800">{op.nombre}</h5>
-                                  {op.fecha && (
-                                    <span className="text-sm text-orange-600 bg-orange-100 px-2 py-1 rounded-lg">
-                                      {formatearFecha(op.fecha)}
-                                    </span>
-                                  )}
-                                </div>
-                                {op.notas && (
-                                  <p className="text-orange-700 text-sm">{op.notas}</p>
-                                )}
-                              </div>
-                            ))}
+                      {/* Información adicional */}
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-semibold text-gray-700 block mb-1">Esterilizado:</span>
+                          <p className="text-gray-900">{mascota.esterilizado ? "Sí" : "No"}</p>
+                        </div>
+                        {mascota.microchip?.numero && (
+                          <div>
+                            <span className="font-semibold text-gray-700 block mb-1">Microchip:</span>
+                            <p className="text-gray-900">{mascota.microchip.numero}</p>
                           </div>
-                        ) : (
-                          <p className="text-gray-500 italic">No hay operaciones registradas</p>
                         )}
                       </div>
 
-                      <div className="pt-6 mt-6 border-t border-gray-200">
-                        <p className="text-xs text-gray-400">ID: {m._id}</p>
-                        {m.createdAt && (
-                          <p className="text-xs text-gray-400">
-                            Registrada: {new Date(m.createdAt).toLocaleString()}
-                          </p>
+                      {/* Historial */}
+                      {mascota.historial && (
+                        <div className="mt-6 p-4 bg-blue-50 rounded-xl">
+                          <span className="font-semibold text-blue-700 block mb-2">Historial:</span>
+                          <p className="text-blue-900 text-sm">{mascota.historial}</p>
+                        </div>
+                      )}
+
+                      <div className="mt-6 pt-4 border-t border-gray-200">
+                        <p className="text-xs text-gray-400">ID: {mascota._id}</p>
+                        {mascota.createdAt && (
+                          <p className="text-xs text-gray-400">Registrada: {new Date(mascota.createdAt).toLocaleString()}</p>
                         )}
                       </div>
                     </div>
