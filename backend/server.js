@@ -98,10 +98,18 @@ const connectDB = async () => {
 
 connectDB();
 
-<<<<<<< HEAD
-// 🔍 Rutas de health check - DEBEN IR ANTES DE OTRAS RUTAS
+
 app.get('/health', (req, res) => {
-=======
+  res.json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    mercadopago_configured: !!process.env.MERCADOPAGO_ACCESS_TOKEN,
+    mongodb_connected: mongoose.connection.readyState === 1,
+    services: ['payments', 'auth', 'mascotas', 'productos', 'citas', 'cart']
+  });
+});
+
 /* ======================
    MODELOS ACTUALIZADOS CON VERIFICACIÓN DE EMAIL Y CARRITO
    ====================== */
@@ -2459,7 +2467,6 @@ router.get("/admin/citas/estadisticas-mantenimiento", verifyToken, isAdmin, asyn
 
 // Ruta para obtener configuración del sistema automático (solo admin)
 router.get("/admin/citas/config-automatico", verifyToken, isAdmin, (req, res) => {
->>>>>>> 2a94855 (Merge branch 'main' of https://github.com/akikosaver12/final-final)
   res.json({
     status: 'OK',
     timestamp: new Date().toISOString(),
